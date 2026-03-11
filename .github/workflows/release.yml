@@ -13,11 +13,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -33,10 +38,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
+      - name: Verify npm identity
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm whoami
+
       - name: Publish to npm
-        if: ${{ env.NPM_CONFIG_TOKEN != '' }}
-        run: bun publish --access public
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm publish --access public
 
       - name: Skip npm publish when token is missing
-        if: ${{ env.NPM_CONFIG_TOKEN == '' }}
+        if: ${{ env.NPM_TOKEN == '' }}
         run: echo "NPM_TOKEN is not configured, skipping npm publish."
