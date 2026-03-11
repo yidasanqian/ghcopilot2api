@@ -1,0 +1,18 @@
+services:
+  copilot-api:
+    build:
+      context: .
+    container_name: ghcopilot2api
+    ports:
+      - "127.0.0.1:4141:4141"
+    environment:
+      GH_TOKEN: ${GH_TOKEN:-}
+      LOG_FILE: /var/log/copilot-api/copilot-api.log
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      ALL_PROXY: ${ALL_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+    volumes:
+      - ./copilot-data:/root/.local/share/copilot-api
+      - ./logs:/var/log/copilot-api
+    restart: unless-stopped

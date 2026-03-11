@@ -13,4 +13,3 @@ tests/
 .eslintcache
 logs
 copilot-data
-docker-compose.yml

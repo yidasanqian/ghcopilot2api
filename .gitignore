@@ -3,6 +3,9 @@ node_modules/
 
 # local env
 *.local
+.env
+.env.*
+!.env.example
 
 # aider
 .aider*
@@ -14,4 +17,3 @@ node_modules/
 dist/
 logs
 copilot-data
-docker-compose.yml
