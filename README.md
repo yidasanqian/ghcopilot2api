@@ -1,309 +1,387 @@
-# Copilot API Proxy
+# ghcopilot2api
+
+将 GitHub Copilot 封装为 OpenAI 兼容和 Anthropic 兼容接口的本地代理服务，可用于接入现有 AI 客户端、脚本或 Claude Code。
 
 > [!WARNING]
-> 这是一个基于逆向分析实现的 GitHub Copilot API 代理，并非 GitHub 官方项目。接口、鉴权方式或行为都可能随时变化，请自行承担使用风险。
+> 这是一个基于逆向分析实现的非官方项目，不代表 GitHub。Copilot 接口、鉴权方式、模型列表和限制策略都可能随时变化。
 
 > [!WARNING]
-> GitHub 可能会对高频、批量或自动化程度过高的 Copilot 请求触发风控。
-> 过度使用可能导致告警、限流，严重时甚至造成 Copilot 权限临时受限。
+> 请谨慎、适度使用，避免高频批量请求触发风控、限流或账号异常。
 >
-> 使用前请务必阅读：
+> 使用前建议阅读：
 >
 > - [GitHub Acceptable Use Policies](https://docs.github.com/site-policy/acceptable-use-policies/github-acceptable-use-policies#4-spam-and-inauthentic-activity-on-github)
 > - [GitHub Copilot Terms](https://docs.github.com/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot)
->
-> 请谨慎、适度使用，避免对 GitHub 基础设施造成异常压力。
 
 > [!IMPORTANT]
-> 当前维护仓库：<https://github.com/yidasanqian/ghcopilot2api>
->
-> 原上游仓库已不再维护，本仓库文档与元数据已切换为当前维护地址。
+> 当前维护仓库为：[https://github.com/yidasanqian/ghcopilot2api](https://github.com/yidasanqian/ghcopilot2api)
 
----
+如果你已经在使用 [opencode](https://github.com/sst/opencode)，通常不需要这个项目，因为 opencode 已经原生支持 GitHub Copilot provider。
 
-如果你正在使用 [opencode](https://github.com/sst/opencode)，通常不需要这个项目，因为 opencode 已经原生支持 GitHub Copilot provider。
+## 为什么使用它
 
-## 项目简介
+这个项目的目标不是替代官方 SDK，而是把 GitHub Copilot 暴露成更常见的接口协议，方便接入现有生态：
 
-这是一个将 GitHub Copilot 封装为 OpenAI 兼容接口与 Anthropic 兼容接口的代理服务。你可以把它接到支持以下协议的工具中：
+- OpenAI Chat Completions
+- OpenAI Models
+- OpenAI Embeddings
+- Anthropic Messages
+- Anthropic Count Tokens
 
-- OpenAI Chat Completions API
-- OpenAI Models API
-- OpenAI Embeddings API
-- Anthropic Messages API
+适合以下场景：
 
-因此它也可以作为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 的后端使用。
+- 你已有只支持 OpenAI 或 Anthropic 协议的客户端。
+- 你想让 Claude Code 走本地代理。
+- 你需要一个可本地运行、可加限速、可手动审批的 Copilot 转发层。
+- 你想查看 Copilot 使用量、可用模型和当前 token 状态。
 
-## 功能特性
+## 功能概览
 
-- OpenAI 兼容接口：支持 /v1/chat/completions、/v1/models、/v1/embeddings。
-- Anthropic 兼容接口：支持 /v1/messages 与 /v1/messages/count_tokens。
-- Claude Code 集成：可通过 --claude-code 快速生成启动命令。
-- 用量面板：支持查看 Copilot 配额、使用情况与原始统计数据。
-- 速率控制：支持 --rate-limit 与 --wait，降低触发风控和报错的概率。
-- 手动审批：支持 --manual，对每次请求进行确认。
-- 调试辅助：支持 --show-token 输出令牌刷新信息，便于排障。
-- 灵活鉴权：既支持交互式登录，也支持直接传入 GitHub Token。
-- 多账户类型：支持 individual、business、enterprise 三类 Copilot 账户。
+| 能力               | 说明                                                              |
+| ------------------ | ----------------------------------------------------------------- |
+| OpenAI 兼容接口    | 支持 `/v1/chat/completions`、`/v1/models`、`/v1/embeddings` |
+| Anthropic 兼容接口 | 支持 `/v1/messages`、`/v1/messages/count_tokens`              |
+| Claude Code 集成   | 支持 `--claude-code` 生成启动环境变量命令                       |
+| 用量查看           | 支持 `/usage` 接口和独立 Usage Viewer 页面                      |
+| 风控缓冲           | 支持 `--manual`、`--rate-limit`、`--wait`                   |
+| 多账户类型         | 支持 `individual`、`business`、`enterprise`                 |
+| 鉴权方式           | 支持设备码登录，也支持直接注入 GitHub token                       |
+| 调试辅助           | 支持 `auth`、`check-usage`、`debug` 子命令                  |
 
-## 演示
+## Demo
 
 https://github.com/user-attachments/assets/7654b383-669d-4eb9-b23c-06d7aefee8c5
 
-## 环境要求
+## 快速开始
 
-- Bun 1.2.x 或更高版本
+### 前置要求
+
 - 一个已开通 GitHub Copilot 的 GitHub 账号
+- 本地开发建议使用 Bun 1.2+
 
-## 安装
+### 方式一：直接运行已发布 CLI
 
-```sh
-bun install
-```
-
-## Docker 使用方式
-
-构建镜像：
-
-```sh
-docker build -t copilot-api .
-```
-
-运行容器：
-
-```sh
-# 在宿主机创建目录，用于持久化 GitHub Token 及相关状态
-mkdir -p ./copilot-data
-
-# 挂载到容器内，避免容器重启后重新登录
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
-```
-
-说明：宿主机上的 copilot-data 会映射到容器中的 /root/.local/share/copilot-api，用于持久化认证信息。
-
-### 通过环境变量传入 Token
-
-```sh
-# 构建时传入 GitHub Token
-docker build --build-arg GH_TOKEN=your_github_token_here -t copilot-api .
-
-# 运行时传入 GitHub Token
-docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
-
-# 运行并附加额外参数
-docker run -p 4141:4141 -e GH_TOKEN=your_token copilot-api start --verbose --port 4141
-```
-
-### Docker Compose 示例
-
-```yaml
-version: "3.8"
-services:
-  copilot-api:
-    build: .
-    ports:
-      - "4141:4141"
-    environment:
-      - GH_TOKEN=your_github_token_here
-    restart: unless-stopped
-```
-
-当前 Docker 镜像包含以下特性：
-
-- 多阶段构建，减小镜像体积
-- 非 root 用户运行，增强安全性
-- 健康检查，便于容器编排系统监控
-- 固定基础镜像版本，提高可复现性
-
-## 使用 npx 运行
-
-直接启动：
+首次启动时，如果本地没有 GitHub token，程序会自动进入设备码登录流程。
 
 ```sh
 npx ghcopilot2api@latest start
 ```
 
-指定端口：
+自定义端口：
 
 ```sh
 npx ghcopilot2api@latest start --port 8080
 ```
 
-仅执行认证：
+只执行认证，不启动服务：
 
 ```sh
 npx ghcopilot2api@latest auth
 ```
 
-## 命令结构
+### 方式二：从源码运行
 
-项目提供以下子命令：
+```sh
+bun install
+bun run dev
+```
 
-- start：启动 API 服务；如有需要，也会自动执行认证流程。
-- auth：仅执行 GitHub 登录认证，不启动服务。
-- check-usage：在终端中直接查看 Copilot 配额与用量。
-- debug：输出版本、运行时、路径、认证状态等调试信息。
+生产模式：
 
-## 命令行参数
+```sh
+bun run build
+bun run start
+```
+
+Windows 下也可以直接运行 [start.bat](start.bat)，它会自动打开 Usage Viewer 页面。
+
+## 启动后如何验证
+
+服务默认监听 `http://127.0.0.1:4141`。
+
+先看模型列表：
+
+```sh
+curl http://127.0.0.1:4141/v1/models
+```
+
+再发一个最小 OpenAI 兼容请求。这个代理默认不校验客户端传入的 Bearer Token，所以示例里用 `dummy` 即可；很多客户端只要求字段存在，不要求服务端校验。
+
+```sh
+curl http://127.0.0.1:4141/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dummy" \
+  -d '{
+    "model": "替换为 /v1/models 返回的模型 ID",
+    "messages": [
+      { "role": "user", "content": "你好，简单介绍一下你自己。" }
+    ]
+  }'
+```
+
+Anthropic 兼容请求示例：
+
+```sh
+curl http://127.0.0.1:4141/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: dummy" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "替换为 /v1/models 返回的模型 ID",
+    "max_tokens": 256,
+    "messages": [
+      { "role": "user", "content": "用一句话解释 Bun 是什么。" }
+    ]
+  }'
+```
+
+## 兼容接口
+
+### OpenAI 兼容
+
+| 方法 | 路径                     | 说明               |
+| ---- | ------------------------ | ------------------ |
+| POST | `/v1/chat/completions` | 聊天补全           |
+| GET  | `/v1/models`           | 获取可用模型       |
+| POST | `/v1/embeddings`       | 获取文本 embedding |
+
+同时还提供不带 `v1` 前缀的兼容路径：
+
+- `/chat/completions`
+- `/models`
+- `/embeddings`
+
+### Anthropic 兼容
+
+| 方法 | 路径                          | 说明          |
+| ---- | ----------------------------- | ------------- |
+| POST | `/v1/messages`              | Messages API  |
+| POST | `/v1/messages/count_tokens` | 计算 token 数 |
+
+### 扩展接口
+
+| 方法 | 路径       | 说明                              |
+| ---- | ---------- | --------------------------------- |
+| GET  | `/usage` | 返回 Copilot 用量与配额快照       |
+| GET  | `/token` | 返回当前 Copilot token            |
+| GET  | `/`      | 健康检查，返回 `Server running` |
+
+## 常用命令
 
 ### start
 
-| 参数 | 说明 | 默认值 | 别名 |
-| --- | --- | --- | --- |
-| --port | 监听端口 | 4141 | -p |
-| --verbose | 启用详细日志 | false | -v |
-| --account-type | 账户类型，可选 individual、business、enterprise | individual | -a |
-| --manual | 启用手动审批 | false | 无 |
-| --rate-limit | 请求间隔限速，单位秒 | 无 | -r |
-| --wait | 限速命中时等待，而不是直接报错 | false | -w |
-| --github-token | 直接传入 GitHub Token，通常需先通过 auth 生成 | 无 | -g |
-| --claude-code | 生成 Claude Code 启动配置命令 | false | -c |
-| --show-token | 登录、刷新时输出 GitHub/Copilot Token | false | 无 |
-| --proxy-env | 从环境变量初始化代理 | false | 无 |
+```sh
+npx ghcopilot2api@latest start [options]
+```
 
-### auth
+| 参数                       | 说明                                                   | 默认值         |
+| -------------------------- | ------------------------------------------------------ | -------------- |
+| `--port`, `-p`         | 监听端口                                               | `4141`       |
+| `--verbose`, `-v`      | 输出详细日志                                           | `false`      |
+| `--account-type`, `-a` | 账户类型：`individual`、`business`、`enterprise` | `individual` |
+| `--manual`               | 每次请求前手动确认                                     | `false`      |
+| `--rate-limit`, `-r`   | 请求间隔限速，单位秒                                   | 无             |
+| `--wait`, `-w`         | 命中限速后等待而不是报错                               | `false`      |
+| `--github-token`, `-g` | 直接传入 GitHub token                                  | 无             |
+| `--claude-code`, `-c`  | 生成 Claude Code 配置命令                              | `false`      |
+| `--show-token`           | 输出 GitHub/Copilot token，便于排障                    | `false`      |
+| `--proxy-env`            | 按环境变量初始化代理，主要用于 Node/undici 场景        | `false`      |
 
-| 参数 | 说明 | 默认值 | 别名 |
-| --- | --- | --- | --- |
-| --verbose | 启用详细日志 | false | -v |
-| --show-token | 登录时显示 GitHub Token | false | 无 |
-
-### debug
-
-| 参数 | 说明 | 默认值 | 别名 |
-| --- | --- | --- | --- |
-| --json | 以 JSON 格式输出调试信息 | false | 无 |
-
-## API 接口
-
-服务同时暴露 OpenAI 兼容接口与 Anthropic 兼容接口。
-
-### OpenAI 兼容接口
-
-| 路径 | 方法 | 说明 |
-| --- | --- | --- |
-| /v1/chat/completions | POST | 根据聊天上下文生成回复 |
-| /v1/models | GET | 获取当前可用模型列表 |
-| /v1/embeddings | POST | 为输入文本生成向量嵌入 |
-
-### Anthropic 兼容接口
-
-| 路径 | 方法 | 说明 |
-| --- | --- | --- |
-| /v1/messages | POST | 根据消息上下文生成回复 |
-| /v1/messages/count_tokens | POST | 计算消息对应的 token 数 |
-
-### 用量监控接口
-
-| 路径 | 方法 | 说明 |
-| --- | --- | --- |
-| /usage | GET | 获取 Copilot 用量、配额与统计信息 |
-| /token | GET | 获取当前服务使用的 Copilot Token |
-
-## 常用示例
+### 其它子命令
 
 ```sh
-# 基础启动
-npx ghcopilot2api@latest start
-
-# 自定义端口并启用详细日志
-npx ghcopilot2api@latest start --port 8080 --verbose
-
-# 使用 business 账户
-npx ghcopilot2api@latest start --account-type business
-
-# 使用 enterprise 账户
-npx ghcopilot2api@latest start --account-type enterprise
-
-# 每次请求都手动确认
-npx ghcopilot2api@latest start --manual
-
-# 两次请求之间至少间隔 30 秒
-npx ghcopilot2api@latest start --rate-limit 30
-
-# 触发限速时等待，而不是报错
-npx ghcopilot2api@latest start --rate-limit 30 --wait
-
-# 直接传入 GitHub Token
-npx ghcopilot2api@latest start --github-token ghp_YOUR_TOKEN_HERE
-
-# 仅认证
 npx ghcopilot2api@latest auth
-
-# 认证时输出详细日志
-npx ghcopilot2api@latest auth --verbose
-
-# 在终端查看用量
 npx ghcopilot2api@latest check-usage
-
-# 输出调试信息
 npx ghcopilot2api@latest debug
-
-# 以 JSON 输出调试信息
 npx ghcopilot2api@latest debug --json
-
-# 从 HTTP_PROXY / HTTPS_PROXY 等环境变量初始化代理
-npx ghcopilot2api@latest start --proxy-env
 ```
 
-## 用量面板
+## 认证与数据目录
 
-服务启动后，控制台会打印 Copilot Usage Dashboard 的访问地址。
+默认会把 GitHub token 持久化到本机目录：
 
-1. 启动服务：
+```text
+~/.local/share/copilot-api/github_token
+```
+
+认证方式为 GitHub 设备码登录：
+
+1. 启动 `start` 或单独运行 `auth`
+2. 终端会提示设备码和验证地址
+3. 浏览器完成授权
+4. token 写入本地目录，后续启动可复用
+
+如果你已经有可用 token，也可以直接通过 `--github-token` 或 Docker 中的 `GH_TOKEN` 注入。
+
+## Docker 与部署
+
+### 构建镜像
 
 ```sh
-npx ghcopilot2api@latest start
+docker build -t ghcopilot2api .
 ```
 
-2. 控制台会输出类似下面的地址：
+### 快速试跑
 
-```text
-https://yidasanqian.github.io/ghcopilot2api?endpoint=http://localhost:4141/usage
+如果你已经有可用的 GitHub token，可以直接注入环境变量启动容器：
+
+```sh
+docker run -p 127.0.0.1:4141:4141 \
+  -e GH_TOKEN=your_github_token \
+  -v ${PWD}/copilot-data:/root/.local/share/copilot-api \
+  ghcopilot2api
 ```
 
-如果你使用 Windows 下的 start.bat，这个页面会自动打开。
+需要日志落盘时：
 
-面板支持：
-
-- 通过 URL 参数预填 /usage 接口地址。
-- 点击 Fetch 拉取或刷新数据。
-- 以进度条形式展示 Chat、Completions 等配额使用情况。
-- 查看完整原始 JSON，便于进一步排查。
-- 切换到任意兼容接口地址，例如：
-
-```text
-https://yidasanqian.github.io/ghcopilot2api?endpoint=http://your-api-server/usage
+```sh
+docker run -p 127.0.0.1:4141:4141 \
+  -e GH_TOKEN=your_github_token \
+  -e LOG_FILE=/var/log/copilot-api/copilot-api.log \
+  -v ${PWD}/copilot-data:/root/.local/share/copilot-api \
+  -v ${PWD}/logs:/var/log/copilot-api \
+  ghcopilot2api
 ```
 
-## 与 Claude Code 配合使用
+这里把端口绑定到 `127.0.0.1`，避免容器服务被宿主机外部直接访问；如果你确实要对外暴露，再通过反向代理或防火墙规则单独放开。
 
-这个代理可以作为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 的后端。
+### 推荐目录
 
-### 方式一：通过 --claude-code 交互生成配置
+长期运行时建议至少持久化这两个目录：
+
+- `./copilot-data`：保存 GitHub 登录状态和 token 文件
+- `./logs`：保存容器标准输出镜像日志
+
+```sh
+mkdir -p ./copilot-data ./logs
+```
+
+### 一次性认证容器
+
+如果你不想把 `GH_TOKEN` 放进环境变量，可以先跑一次认证流程，把登录状态写入挂载卷：
+
+```sh
+docker run --rm -it \
+  -v ${PWD}/copilot-data:/root/.local/share/copilot-api \
+  ghcopilot2api --auth
+```
+
+认证完成后，后续启动容器时即使不传 `GH_TOKEN`，也能复用卷里的本地状态。
+
+### Docker Compose
+
+仓库提供了 [docker-compose.example.yml](docker-compose.example.yml) 示例，适合长期运行。推荐流程如下：
+
+1. 复制 [docker-compose.example.yml](docker-compose.example.yml) 为本地的 `docker-compose.yml`，或直接使用仓库中的本地 Compose 文件
+2. 复制 [.env.example](.env.example) 为 `.env`
+3. 在 `.env` 中填写 `GH_TOKEN`，或者留空后改用一次性认证容器
+4. 执行 `docker compose up -d --build`
+5. 用 `docker compose logs -f copilot-api` 跟踪启动日志
+
+Docker Compose 会自动读取项目根目录下的 `.env`。你可以直接从示例生成：
+
+```sh
+cp .env.example .env
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+推荐的 `.env` 内容如下：
+
+```dotenv
+GH_TOKEN=
+LOG_FILE=/var/log/copilot-api/copilot-api.log
+HTTP_PROXY=
+HTTPS_PROXY=
+ALL_PROXY=
+NO_PROXY=localhost,127.0.0.1,::1
+```
+
+变量说明：
+
+- `GH_TOKEN`：可选，直接注入 GitHub token；如果使用一次性认证容器并持久化 `copilot-data`，可以留空。
+- `LOG_FILE`：容器内日志落盘路径，需配合 `./logs` 挂载目录。
+- `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`：出站代理配置，按需填写。
+
+推荐配置如下：
+
+```yaml
+services:
+  copilot-api:
+    build:
+      context: .
+    container_name: ghcopilot2api
+    ports:
+      - "127.0.0.1:4141:4141"
+    environment:
+      GH_TOKEN: ${GH_TOKEN:-}
+      LOG_FILE: /var/log/copilot-api/copilot-api.log
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      ALL_PROXY: ${ALL_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+    volumes:
+      - ./copilot-data:/root/.local/share/copilot-api
+      - ./logs:/var/log/copilot-api
+    restart: unless-stopped
+```
+
+### 两种部署鉴权方式
+
+#### 方式一：环境变量注入
+
+适合已有可控 secret 管理系统的环境，比如 CI/CD、PaaS、容器编排平台。
+
+- 优点：启动简单，部署自动化方便
+- 注意：不要把 `GH_TOKEN` 明文写进仓库里的 Compose 文件
+
+#### 方式二：挂载卷持久化登录状态
+
+适合个人服务器、NAS 或长期运行的单机服务。
+
+- 优点：不需要把 token 明文放进 Compose
+- 注意：`copilot-data` 目录需要妥善备份并限制权限
+
+### 生产部署建议
+
+- 默认只绑定到 `127.0.0.1` 或内网地址，把公网入口交给 Nginx、Caddy 或云负载均衡。
+- 把鉴权、HTTPS、访问控制放在反向代理层，不要把当前服务直接裸露到公网。
+- 不要把 `GH_TOKEN` 提交进 `docker-compose.yml`、日志或截图。
+- 为 `copilot-data` 和 `logs` 做持久化，避免容器重建后丢失认证状态与运行记录。
+- 用 `/` 做容器健康探针，用 `/usage` 做运行状态观察。
+- 升级时优先执行 `docker compose up -d --build`，确认日志无异常后再切流。
+
+## Claude Code 集成
+
+### 方式一：让程序生成配置命令
 
 ```sh
 npx ghcopilot2api@latest start --claude-code
 ```
 
-执行后会提示你选择主模型与一个用于后台任务的小模型。完成后，程序会把 Claude Code 所需的环境变量命令复制到剪贴板。
+程序会让你选择主模型和小模型，并将 Claude Code 需要的环境变量命令复制到剪贴板。
 
-### 方式二：手动写入 .claude/settings.json
-
-你也可以在项目根目录创建 .claude/settings.json，固定 Claude Code 的运行配置。例如：
+### 方式二：手动配置
 
 ```json
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4141",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "gpt-4.1",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-4.1",
-    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-4.1",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-4.1",
+    "ANTHROPIC_BASE_URL": "http://localhost:4141",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4.6",
+    "ANTHROPIC_MODEL": "claude-sonnet-4.6",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "DISABLE_TELEMETRY": "1"
   },
+  "includeCoAuthoredBy": false,
   "permissions": {
     "deny": [
       "WebSearch"
@@ -312,29 +390,85 @@ npx ghcopilot2api@latest start --claude-code
 }
 ```
 
-更多配置说明可参考：
+更多说明可参考：
 
 - [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
 - [Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
 
-## 从源码运行
+## Usage Viewer
 
-开发模式：
+服务启动后，终端会打印一个可视化面板地址，例如：
 
-```sh
-bun run dev
+```text
+https://yidasanqian.github.io/ghcopilot2api?endpoint=http://localhost:4141/usage
 ```
 
-生产模式：
+它会读取 `/usage` 接口，展示：
+
+- Chat / Completions / Premium 等配额使用情况
+- Copilot 套餐类型
+- 配额重置时间
+- 原始 JSON 数据
+
+## 运行建议
+
+- 如果你担心触发风控，优先使用 `--manual`、`--rate-limit` 和 `--wait`。
+- 如果你使用的是 Business 或 Enterprise 账户，记得显式设置 `--account-type`。
+- 先通过 `/v1/models` 获取模型列表，不要在客户端里硬编码模型名。
+- 对 Anthropic `count_tokens` 的结果要按“兼容估算”理解，不要把它当作官方精确计费值。
+
+## 安全说明
+
+这个项目默认更适合本机开发或受信任内网，不适合直接裸露到公网。原因包括：
+
+- 服务端默认不校验客户端传入的 API Key 或 Bearer Token。
+- `/token` 会直接返回当前 Copilot token。
+- 服务默认启用 CORS。
+
+如果你必须对外提供服务，至少应额外加上：
+
+- 反向代理层鉴权
+- IP 白名单或内网隔离
+- HTTPS
+- 日志与访问审计
+- 关闭或限制 `/token` 的访问
+
+## 开发
 
 ```sh
-bun run start
+bun install
+bun run build
+bun run lint
+bun test
 ```
 
-## 使用建议
+单测示例：
 
-- 如果你担心触发 GitHub Copilot 风控，优先考虑 --manual、--rate-limit 和 --wait。
-- 如果客户端本身没有自动重试能力，建议将 --rate-limit 与 --wait 配合使用。
-- 如果你使用的是 GitHub Copilot Business 或 Enterprise，记得显式指定 --account-type。
-- 如需了解企业网络路由相关配置，可参考 GitHub 官方文档：
-  [Copilot subscription-based network routing](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization)
+```sh
+bun test tests/anthropic-request.test.ts
+```
+
+## 排障
+
+### 看本地状态
+
+```sh
+npx ghcopilot2api@latest debug
+```
+
+JSON 输出：
+
+```sh
+npx ghcopilot2api@latest debug --json
+```
+
+### 常见问题
+
+- 启动后要求登录：说明本地还没有持久化 GitHub token，按设备码流程完成一次授权即可。
+- 请求被限速或失败：尝试降低并发，配合 `--rate-limit` 与 `--wait`。
+- 模型不可用：先访问 `/v1/models`，确认当前账号下真正可用的模型。
+- 容器重启后丢登录：确认是否挂载了 `copilot-data` 目录。
+
+## License
+
+[MIT](LICENSE)
