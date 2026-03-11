@@ -1,101 +1,100 @@
 # Copilot API Proxy
 
 > [!WARNING]
-> This is a reverse-engineered proxy of GitHub Copilot API. It is not supported by GitHub, and may break unexpectedly. Use at your own risk.
+> 这是一个基于逆向分析实现的 GitHub Copilot API 代理，并非 GitHub 官方项目。接口、鉴权方式或行为都可能随时变化，请自行承担使用风险。
 
 > [!WARNING]
-> **GitHub Security Notice:**  
-> Excessive automated or scripted use of Copilot (including rapid or bulk requests, such as via automated tools) may trigger GitHub's abuse-detection systems.  
-> You may receive a warning from GitHub Security, and further anomalous activity could result in temporary suspension of your Copilot access.
+> GitHub 可能会对高频、批量或自动化程度过高的 Copilot 请求触发风控。
+> 过度使用可能导致告警、限流，严重时甚至造成 Copilot 权限临时受限。
 >
-> GitHub prohibits use of their servers for excessive automated bulk activity or any activity that places undue burden on their infrastructure.
->
-> Please review:
+> 使用前请务必阅读：
 >
 > - [GitHub Acceptable Use Policies](https://docs.github.com/site-policy/acceptable-use-policies/github-acceptable-use-policies#4-spam-and-inauthentic-activity-on-github)
 > - [GitHub Copilot Terms](https://docs.github.com/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot)
 >
-> Use this proxy responsibly to avoid account restrictions.
+> 请谨慎、适度使用，避免对 GitHub 基础设施造成异常压力。
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/E1E519XS7W)
+> [!IMPORTANT]
+> 当前维护仓库：<https://github.com/yidasanqian/ghcopilot2api>
+>
+> 原上游仓库已不再维护，本仓库文档与元数据已切换为当前维护地址。
 
 ---
 
-**Note:** If you are using [opencode](https://github.com/sst/opencode), you do not need this project. Opencode supports GitHub Copilot provider out of the box.
+如果你正在使用 [opencode](https://github.com/sst/opencode)，通常不需要这个项目，因为 opencode 已经原生支持 GitHub Copilot provider。
 
----
+## 项目简介
 
-## Project Overview
+这是一个将 GitHub Copilot 封装为 OpenAI 兼容接口与 Anthropic 兼容接口的代理服务。你可以把它接到支持以下协议的工具中：
 
-A reverse-engineered proxy for the GitHub Copilot API that exposes it as an OpenAI and Anthropic compatible service. This allows you to use GitHub Copilot with any tool that supports the OpenAI Chat Completions API or the Anthropic Messages API, including to power [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview).
+- OpenAI Chat Completions API
+- OpenAI Models API
+- OpenAI Embeddings API
+- Anthropic Messages API
 
-## Features
+因此它也可以作为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 的后端使用。
 
-- **OpenAI & Anthropic Compatibility**: Exposes GitHub Copilot as an OpenAI-compatible (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`) and Anthropic-compatible (`/v1/messages`) API.
-- **Claude Code Integration**: Easily configure and launch [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) to use Copilot as its backend with a simple command-line flag (`--claude-code`).
-- **Usage Dashboard**: A web-based dashboard to monitor your Copilot API usage, view quotas, and see detailed statistics.
-- **Rate Limit Control**: Manage API usage with rate-limiting options (`--rate-limit`) and a waiting mechanism (`--wait`) to prevent errors from rapid requests.
-- **Manual Request Approval**: Manually approve or deny each API request for fine-grained control over usage (`--manual`).
-- **Token Visibility**: Option to display GitHub and Copilot tokens during authentication and refresh for debugging (`--show-token`).
-- **Flexible Authentication**: Authenticate interactively or provide a GitHub token directly, suitable for CI/CD environments.
-- **Support for Different Account Types**: Works with individual, business, and enterprise GitHub Copilot plans.
+## 功能特性
 
-## Demo
+- OpenAI 兼容接口：支持 /v1/chat/completions、/v1/models、/v1/embeddings。
+- Anthropic 兼容接口：支持 /v1/messages 与 /v1/messages/count_tokens。
+- Claude Code 集成：可通过 --claude-code 快速生成启动命令。
+- 用量面板：支持查看 Copilot 配额、使用情况与原始统计数据。
+- 速率控制：支持 --rate-limit 与 --wait，降低触发风控和报错的概率。
+- 手动审批：支持 --manual，对每次请求进行确认。
+- 调试辅助：支持 --show-token 输出令牌刷新信息，便于排障。
+- 灵活鉴权：既支持交互式登录，也支持直接传入 GitHub Token。
+- 多账户类型：支持 individual、business、enterprise 三类 Copilot 账户。
+
+## 演示
 
 https://github.com/user-attachments/assets/7654b383-669d-4eb9-b23c-06d7aefee8c5
 
-## Prerequisites
+## 环境要求
 
-- Bun (>= 1.2.x)
-- GitHub account with Copilot subscription (individual, business, or enterprise)
+- Bun 1.2.x 或更高版本
+- 一个已开通 GitHub Copilot 的 GitHub 账号
 
-## Installation
-
-To install dependencies, run:
+## 安装
 
 ```sh
 bun install
 ```
 
-## Using with Docker
+## Docker 使用方式
 
-Build image
+构建镜像：
 
 ```sh
 docker build -t copilot-api .
 ```
 
-Run the container
+运行容器：
 
 ```sh
-# Create a directory on your host to persist the GitHub token and related data
+# 在宿主机创建目录，用于持久化 GitHub Token 及相关状态
 mkdir -p ./copilot-data
 
-# Run the container with a bind mount to persist the token
-# This ensures your authentication survives container restarts
-
+# 挂载到容器内，避免容器重启后重新登录
 docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
 ```
 
-> **Note:**
-> The GitHub token and related data will be stored in `copilot-data` on your host. This is mapped to `/root/.local/share/copilot-api` inside the container, ensuring persistence across restarts.
+说明：宿主机上的 copilot-data 会映射到容器中的 /root/.local/share/copilot-api，用于持久化认证信息。
 
-### Docker with Environment Variables
-
-You can pass the GitHub token directly to the container using environment variables:
+### 通过环境变量传入 Token
 
 ```sh
-# Build with GitHub token
+# 构建时传入 GitHub Token
 docker build --build-arg GH_TOKEN=your_github_token_here -t copilot-api .
 
-# Run with GitHub token
+# 运行时传入 GitHub Token
 docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
-# Run with additional options
+# 运行并附加额外参数
 docker run -p 4141:4141 -e GH_TOKEN=your_token copilot-api start --verbose --port 4141
 ```
 
-### Docker Compose Example
+### Docker Compose 示例
 
 ```yaml
 version: "3.8"
@@ -109,198 +108,189 @@ services:
     restart: unless-stopped
 ```
 
-The Docker image includes:
+当前 Docker 镜像包含以下特性：
 
-- Multi-stage build for optimized image size
-- Non-root user for enhanced security
-- Health check for container monitoring
-- Pinned base image version for reproducible builds
+- 多阶段构建，减小镜像体积
+- 非 root 用户运行，增强安全性
+- 健康检查，便于容器编排系统监控
+- 固定基础镜像版本，提高可复现性
 
-## Using with npx
+## 使用 npx 运行
 
-You can run the project directly using npx:
+直接启动：
 
 ```sh
 npx copilot-api@latest start
 ```
 
-With options:
+指定端口：
 
 ```sh
 npx copilot-api@latest start --port 8080
 ```
 
-For authentication only:
+仅执行认证：
 
 ```sh
 npx copilot-api@latest auth
 ```
 
-## Command Structure
+## 命令结构
 
-Copilot API now uses a subcommand structure with these main commands:
+项目提供以下子命令：
 
-- `start`: Start the Copilot API server. This command will also handle authentication if needed.
-- `auth`: Run GitHub authentication flow without starting the server. This is typically used if you need to generate a token for use with the `--github-token` option, especially in non-interactive environments.
-- `check-usage`: Show your current GitHub Copilot usage and quota information directly in the terminal (no server required).
-- `debug`: Display diagnostic information including version, runtime details, file paths, and authentication status. Useful for troubleshooting and support.
+- start：启动 API 服务；如有需要，也会自动执行认证流程。
+- auth：仅执行 GitHub 登录认证，不启动服务。
+- check-usage：在终端中直接查看 Copilot 配额与用量。
+- debug：输出版本、运行时、路径、认证状态等调试信息。
 
-## Command Line Options
+## 命令行参数
 
-### Start Command Options
+### start
 
-The following command line options are available for the `start` command:
+| 参数 | 说明 | 默认值 | 别名 |
+| --- | --- | --- | --- |
+| --port | 监听端口 | 4141 | -p |
+| --verbose | 启用详细日志 | false | -v |
+| --account-type | 账户类型，可选 individual、business、enterprise | individual | -a |
+| --manual | 启用手动审批 | false | 无 |
+| --rate-limit | 请求间隔限速，单位秒 | 无 | -r |
+| --wait | 限速命中时等待，而不是直接报错 | false | -w |
+| --github-token | 直接传入 GitHub Token，通常需先通过 auth 生成 | 无 | -g |
+| --claude-code | 生成 Claude Code 启动配置命令 | false | -c |
+| --show-token | 登录、刷新时输出 GitHub/Copilot Token | false | 无 |
+| --proxy-env | 从环境变量初始化代理 | false | 无 |
 
-| Option         | Description                                                                   | Default    | Alias |
-| -------------- | ----------------------------------------------------------------------------- | ---------- | ----- |
-| --port         | Port to listen on                                                             | 4141       | -p    |
-| --verbose      | Enable verbose logging                                                        | false      | -v    |
-| --account-type | Account type to use (individual, business, enterprise)                        | individual | -a    |
-| --manual       | Enable manual request approval                                                | false      | none  |
-| --rate-limit   | Rate limit in seconds between requests                                        | none       | -r    |
-| --wait         | Wait instead of error when rate limit is hit                                  | false      | -w    |
-| --github-token | Provide GitHub token directly (must be generated using the `auth` subcommand) | none       | -g    |
-| --claude-code  | Generate a command to launch Claude Code with Copilot API config              | false      | -c    |
-| --show-token   | Show GitHub and Copilot tokens on fetch and refresh                           | false      | none  |
-| --proxy-env    | Initialize proxy from environment variables                                   | false      | none  |
+### auth
 
-### Auth Command Options
+| 参数 | 说明 | 默认值 | 别名 |
+| --- | --- | --- | --- |
+| --verbose | 启用详细日志 | false | -v |
+| --show-token | 登录时显示 GitHub Token | false | 无 |
 
-| Option       | Description               | Default | Alias |
-| ------------ | ------------------------- | ------- | ----- |
-| --verbose    | Enable verbose logging    | false   | -v    |
-| --show-token | Show GitHub token on auth | false   | none  |
+### debug
 
-### Debug Command Options
+| 参数 | 说明 | 默认值 | 别名 |
+| --- | --- | --- | --- |
+| --json | 以 JSON 格式输出调试信息 | false | 无 |
 
-| Option | Description               | Default | Alias |
-| ------ | ------------------------- | ------- | ----- |
-| --json | Output debug info as JSON | false   | none  |
+## API 接口
 
-## API Endpoints
+服务同时暴露 OpenAI 兼容接口与 Anthropic 兼容接口。
 
-The server exposes several endpoints to interact with the Copilot API. It provides OpenAI-compatible endpoints and now also includes support for Anthropic-compatible endpoints, allowing for greater flexibility with different tools and services.
+### OpenAI 兼容接口
 
-### OpenAI Compatible Endpoints
+| 路径 | 方法 | 说明 |
+| --- | --- | --- |
+| /v1/chat/completions | POST | 根据聊天上下文生成回复 |
+| /v1/models | GET | 获取当前可用模型列表 |
+| /v1/embeddings | POST | 为输入文本生成向量嵌入 |
 
-These endpoints mimic the OpenAI API structure.
+### Anthropic 兼容接口
 
-| Endpoint                    | Method | Description                                               |
-| --------------------------- | ------ | --------------------------------------------------------- |
-| `POST /v1/chat/completions` | `POST` | Creates a model response for the given chat conversation. |
-| `GET /v1/models`            | `GET`  | Lists the currently available models.                     |
-| `POST /v1/embeddings`       | `POST` | Creates an embedding vector representing the input text.  |
+| 路径 | 方法 | 说明 |
+| --- | --- | --- |
+| /v1/messages | POST | 根据消息上下文生成回复 |
+| /v1/messages/count_tokens | POST | 计算消息对应的 token 数 |
 
-### Anthropic Compatible Endpoints
+### 用量监控接口
 
-These endpoints are designed to be compatible with the Anthropic Messages API.
+| 路径 | 方法 | 说明 |
+| --- | --- | --- |
+| /usage | GET | 获取 Copilot 用量、配额与统计信息 |
+| /token | GET | 获取当前服务使用的 Copilot Token |
 
-| Endpoint                         | Method | Description                                                  |
-| -------------------------------- | ------ | ------------------------------------------------------------ |
-| `POST /v1/messages`              | `POST` | Creates a model response for a given conversation.           |
-| `POST /v1/messages/count_tokens` | `POST` | Calculates the number of tokens for a given set of messages. |
-
-### Usage Monitoring Endpoints
-
-New endpoints for monitoring your Copilot usage and quotas.
-
-| Endpoint     | Method | Description                                                  |
-| ------------ | ------ | ------------------------------------------------------------ |
-| `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
-| `GET /token` | `GET`  | Get the current Copilot token being used by the API.         |
-
-## Example Usage
-
-Using with npx:
+## 常用示例
 
 ```sh
-# Basic usage with start command
+# 基础启动
 npx copilot-api@latest start
 
-# Run on custom port with verbose logging
+# 自定义端口并启用详细日志
 npx copilot-api@latest start --port 8080 --verbose
 
-# Use with a business plan GitHub account
+# 使用 business 账户
 npx copilot-api@latest start --account-type business
 
-# Use with an enterprise plan GitHub account
+# 使用 enterprise 账户
 npx copilot-api@latest start --account-type enterprise
 
-# Enable manual approval for each request
+# 每次请求都手动确认
 npx copilot-api@latest start --manual
 
-# Set rate limit to 30 seconds between requests
+# 两次请求之间至少间隔 30 秒
 npx copilot-api@latest start --rate-limit 30
 
-# Wait instead of error when rate limit is hit
+# 触发限速时等待，而不是报错
 npx copilot-api@latest start --rate-limit 30 --wait
 
-# Provide GitHub token directly
+# 直接传入 GitHub Token
 npx copilot-api@latest start --github-token ghp_YOUR_TOKEN_HERE
 
-# Run only the auth flow
+# 仅认证
 npx copilot-api@latest auth
 
-# Run auth flow with verbose logging
+# 认证时输出详细日志
 npx copilot-api@latest auth --verbose
 
-# Show your Copilot usage/quota in the terminal (no server needed)
+# 在终端查看用量
 npx copilot-api@latest check-usage
 
-# Display debug information for troubleshooting
+# 输出调试信息
 npx copilot-api@latest debug
 
-# Display debug information in JSON format
+# 以 JSON 输出调试信息
 npx copilot-api@latest debug --json
 
-# Initialize proxy from environment variables (HTTP_PROXY, HTTPS_PROXY, etc.)
+# 从 HTTP_PROXY / HTTPS_PROXY 等环境变量初始化代理
 npx copilot-api@latest start --proxy-env
 ```
 
-## Using the Usage Viewer
+## 用量面板
 
-After starting the server, a URL to the Copilot Usage Dashboard will be displayed in your console. This dashboard is a web interface for monitoring your API usage.
+服务启动后，控制台会打印 Copilot Usage Dashboard 的访问地址。
 
-1.  Start the server. For example, using npx:
-    ```sh
-    npx copilot-api@latest start
-    ```
-2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
-    `https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:4141/usage`
-    - If you use the `start.bat` script on Windows, this page will open automatically.
+1. 启动服务：
 
-The dashboard provides a user-friendly interface to view your Copilot usage data:
+```sh
+npx copilot-api@latest start
+```
 
-- **API Endpoint URL**: The dashboard is pre-configured to fetch data from your local server endpoint via the URL query parameter. You can change this URL to point to any other compatible API endpoint.
-- **Fetch Data**: Click the "Fetch" button to load or refresh the usage data. The dashboard will automatically fetch data on load.
-- **Usage Quotas**: View a summary of your usage quotas for different services like Chat and Completions, displayed with progress bars for a quick overview.
-- **Detailed Information**: See the full JSON response from the API for a detailed breakdown of all available usage statistics.
-- **URL-based Configuration**: You can also specify the API endpoint directly in the URL using a query parameter. This is useful for bookmarks or sharing links. For example:
-  `https://ericc-ch.github.io/copilot-api?endpoint=http://your-api-server/usage`
+2. 控制台会输出类似下面的地址：
 
-## Using with Claude Code
+```text
+https://yidasanqian.github.io/ghcopilot2api?endpoint=http://localhost:4141/usage
+```
 
-This proxy can be used to power [Claude Code](https://docs.anthropic.com/en/claude-code), an experimental conversational AI assistant for developers from Anthropic.
+如果你使用 Windows 下的 start.bat，这个页面会自动打开。
 
-There are two ways to configure Claude Code to use this proxy:
+面板支持：
 
-### Interactive Setup with `--claude-code` flag
+- 通过 URL 参数预填 /usage 接口地址。
+- 点击 Fetch 拉取或刷新数据。
+- 以进度条形式展示 Chat、Completions 等配额使用情况。
+- 查看完整原始 JSON，便于进一步排查。
+- 切换到任意兼容接口地址，例如：
 
-To get started, run the `start` command with the `--claude-code` flag:
+```text
+https://yidasanqian.github.io/ghcopilot2api?endpoint=http://your-api-server/usage
+```
+
+## 与 Claude Code 配合使用
+
+这个代理可以作为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 的后端。
+
+### 方式一：通过 --claude-code 交互生成配置
 
 ```sh
 npx copilot-api@latest start --claude-code
 ```
 
-You will be prompted to select a primary model and a "small, fast" model for background tasks. After selecting the models, a command will be copied to your clipboard. This command sets the necessary environment variables for Claude Code to use the proxy.
+执行后会提示你选择主模型与一个用于后台任务的小模型。完成后，程序会把 Claude Code 所需的环境变量命令复制到剪贴板。
 
-Paste and run this command in a new terminal to launch Claude Code.
+### 方式二：手动写入 .claude/settings.json
 
-### Manual Configuration with `settings.json`
-
-Alternatively, you can configure Claude Code by creating a `.claude/settings.json` file in your project's root directory. This file should contain the environment variables needed by Claude Code. This way you don't need to run the interactive setup every time.
-
-Here is an example `.claude/settings.json` file:
+你也可以在项目根目录创建 .claude/settings.json，固定 Claude Code 的运行配置。例如：
 
 ```json
 {
@@ -322,30 +312,29 @@ Here is an example `.claude/settings.json` file:
 }
 ```
 
-You can find more options here: [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
+更多配置说明可参考：
 
-You can also read more about IDE integration here: [Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
+- [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
+- [Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
 
-## Running from Source
+## 从源码运行
 
-The project can be run from source in several ways:
-
-### Development Mode
+开发模式：
 
 ```sh
 bun run dev
 ```
 
-### Production Mode
+生产模式：
 
 ```sh
 bun run start
 ```
 
-## Usage Tips
+## 使用建议
 
-- To avoid hitting GitHub Copilot's rate limits, you can use the following flags:
-  - `--manual`: Enables manual approval for each request, giving you full control over when requests are sent.
-  - `--rate-limit <seconds>`: Enforces a minimum time interval between requests. For example, `copilot-api start --rate-limit 30` will ensure there's at least a 30-second gap between requests.
-  - `--wait`: Use this with `--rate-limit`. It makes the server wait for the cooldown period to end instead of rejecting the request with an error. This is useful for clients that don't automatically retry on rate limit errors.
-- If you have a GitHub business or enterprise plan account with Copilot, use the `--account-type` flag (e.g., `--account-type business`). See the [official documentation](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization) for more details.
+- 如果你担心触发 GitHub Copilot 风控，优先考虑 --manual、--rate-limit 和 --wait。
+- 如果客户端本身没有自动重试能力，建议将 --rate-limit 与 --wait 配合使用。
+- 如果你使用的是 GitHub Copilot Business 或 Enterprise，记得显式指定 --account-type。
+- 如需了解企业网络路由相关配置，可参考 GitHub 官方文档：
+  [Copilot subscription-based network routing](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization)
