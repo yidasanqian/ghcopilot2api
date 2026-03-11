@@ -1,6 +1,6 @@
 {
-  "name": "copilot-api",
-  "version": "0.7.0",
+  "name": "ghcopilot2api",
+  "version": "0.7.1",
   "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Usable with Claude Code!",
   "keywords": [
     "proxy",
@@ -16,7 +16,7 @@
   "author": "yidasanqian (https://github.com/yidasanqian/ghcopilot2api)",
   "type": "module",
   "bin": {
-    "copilot-api": "./dist/main.js"
+    "ghcopilot2api": "./dist/main.js"
   },
   "files": [
     "dist"

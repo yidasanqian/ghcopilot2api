@@ -120,19 +120,19 @@ services:
 直接启动：
 
 ```sh
-npx copilot-api@latest start
+npx ghcopilot2api@latest start
 ```
 
 指定端口：
 
 ```sh
-npx copilot-api@latest start --port 8080
+npx ghcopilot2api@latest start --port 8080
 ```
 
 仅执行认证：
 
 ```sh
-npx copilot-api@latest auth
+npx ghcopilot2api@latest auth
 ```
 
 ## 命令结构
@@ -204,46 +204,46 @@ npx copilot-api@latest auth
 
 ```sh
 # 基础启动
-npx copilot-api@latest start
+npx ghcopilot2api@latest start
 
 # 自定义端口并启用详细日志
-npx copilot-api@latest start --port 8080 --verbose
+npx ghcopilot2api@latest start --port 8080 --verbose
 
 # 使用 business 账户
-npx copilot-api@latest start --account-type business
+npx ghcopilot2api@latest start --account-type business
 
 # 使用 enterprise 账户
-npx copilot-api@latest start --account-type enterprise
+npx ghcopilot2api@latest start --account-type enterprise
 
 # 每次请求都手动确认
-npx copilot-api@latest start --manual
+npx ghcopilot2api@latest start --manual
 
 # 两次请求之间至少间隔 30 秒
-npx copilot-api@latest start --rate-limit 30
+npx ghcopilot2api@latest start --rate-limit 30
 
 # 触发限速时等待，而不是报错
-npx copilot-api@latest start --rate-limit 30 --wait
+npx ghcopilot2api@latest start --rate-limit 30 --wait
 
 # 直接传入 GitHub Token
-npx copilot-api@latest start --github-token ghp_YOUR_TOKEN_HERE
+npx ghcopilot2api@latest start --github-token ghp_YOUR_TOKEN_HERE
 
 # 仅认证
-npx copilot-api@latest auth
+npx ghcopilot2api@latest auth
 
 # 认证时输出详细日志
-npx copilot-api@latest auth --verbose
+npx ghcopilot2api@latest auth --verbose
 
 # 在终端查看用量
-npx copilot-api@latest check-usage
+npx ghcopilot2api@latest check-usage
 
 # 输出调试信息
-npx copilot-api@latest debug
+npx ghcopilot2api@latest debug
 
 # 以 JSON 输出调试信息
-npx copilot-api@latest debug --json
+npx ghcopilot2api@latest debug --json
 
 # 从 HTTP_PROXY / HTTPS_PROXY 等环境变量初始化代理
-npx copilot-api@latest start --proxy-env
+npx ghcopilot2api@latest start --proxy-env
 ```
 
 ## 用量面板
@@ -253,7 +253,7 @@ npx copilot-api@latest start --proxy-env
 1. 启动服务：
 
 ```sh
-npx copilot-api@latest start
+npx ghcopilot2api@latest start
 ```
 
 2. 控制台会输出类似下面的地址：
@@ -283,7 +283,7 @@ https://yidasanqian.github.io/ghcopilot2api?endpoint=http://your-api-server/usag
 ### 方式一：通过 --claude-code 交互生成配置
 
 ```sh
-npx copilot-api@latest start --claude-code
+npx ghcopilot2api@latest start --claude-code
 ```
 
 执行后会提示你选择主模型与一个用于后台任务的小模型。完成后，程序会把 Claude Code 所需的环境变量命令复制到剪贴板。
