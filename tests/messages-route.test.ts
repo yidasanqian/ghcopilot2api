@@ -53,49 +53,67 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
-void mock.module("~/services/copilot/v2/create-messages", () => ({
-  createMessages: (
-    payload: AnthropicMessagesPayload,
-    options?: {
-      extraHeaders?: Record<string, string>
+const normalizeResponsesInput = (input: ResponsesPayload["input"]) => {
+  if (typeof input === "string") {
+    return [{ type: "message" as const, role: "user" as const, content: input }]
+  }
+
+  return input
+}
+
+function registerModuleMocks() {
+  void mock.module("~/services/copilot/v2/create-messages", () => ({
+    createMessages: (
+      payload: AnthropicMessagesPayload,
+      options?: {
+        extraHeaders?: Record<string, string>
+      },
+    ) => {
+      createMessagesCalls.push({ payload, options })
+      return createMessagesImpl(payload, options)
     },
-  ) => {
-    createMessagesCalls.push({ payload, options })
-    return createMessagesImpl(payload, options)
-  },
-  isAnthropicNonStreaming: (response: unknown) =>
-    typeof response === "object" && response !== null && "content" in response,
-}))
+    isAnthropicNonStreaming: (response: unknown) =>
+      typeof response === "object"
+      && response !== null
+      && "content" in response,
+  }))
 
-void mock.module("~/services/copilot/v2/create-responses", () => ({
-  createResponses: (payload: ResponsesPayload) => {
-    createResponsesCalls.push(payload)
-    return createResponsesImpl(payload)
-  },
-  isResponsesNonStreaming: (response: unknown) =>
-    typeof response === "object" && response !== null && "output" in response,
-}))
+  void mock.module("~/services/copilot/v2/create-responses", () => ({
+    createResponses: (payload: ResponsesPayload) => {
+      createResponsesCalls.push(payload)
+      return createResponsesImpl(payload)
+    },
+    isResponsesNonStreaming: (response: unknown) =>
+      typeof response === "object" && response !== null && "output" in response,
+    normalizeResponsesInput,
+    normalizeResponsesPayload: (payload: ResponsesPayload) => ({
+      ...payload,
+      input: normalizeResponsesInput(payload.input),
+      user: payload.user ?? undefined,
+    }),
+  }))
 
-void mock.module("~/services/copilot/create-chat-completions", () => ({
-  createChatCompletions: (payload: ChatCompletionsPayload) => {
-    createChatCompletionsCalls.push(payload)
-    return createChatCompletionsImpl(payload)
-  },
-}))
+  void mock.module("~/services/copilot/create-chat-completions", () => ({
+    createChatCompletions: (payload: ChatCompletionsPayload) => {
+      createChatCompletionsCalls.push(payload)
+      return createChatCompletionsImpl(payload)
+    },
+  }))
 
-void mock.module("~/lib/rate-limit", () => ({
-  checkRateLimit: () => {
-    checkRateLimitCalls += 1
-    return Promise.resolve()
-  },
-}))
+  void mock.module("~/lib/rate-limit", () => ({
+    checkRateLimit: () => {
+      checkRateLimitCalls += 1
+      return Promise.resolve()
+    },
+  }))
 
-void mock.module("~/lib/approval", () => ({
-  awaitApproval: () => {
-    awaitApprovalCalls += 1
-    return Promise.resolve()
-  },
-}))
+  void mock.module("~/lib/approval", () => ({
+    awaitApproval: () => {
+      awaitApprovalCalls += 1
+      return Promise.resolve()
+    },
+  }))
+}
 
 let server: typeof import("~/server").server
 
@@ -119,7 +137,9 @@ const baseModel = (overrides: Partial<Model>): Model => ({
 })
 
 beforeAll(async () => {
+  registerModuleMocks()
   ;({ server } = await import("~/server"))
+  mock.restore()
 })
 
 afterAll(() => {

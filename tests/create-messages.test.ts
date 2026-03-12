@@ -1,10 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
 
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
-import { createMessages } from "~/services/copilot/v2/create-messages"
+
+mock.restore()
+
+const { createMessages } = await import(
+  "../src/services/copilot/v2/create-messages"
+)
 
 const originalFetch = globalThis.fetch
 

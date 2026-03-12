@@ -24,12 +24,14 @@ let getTokenCountImpl: (
 ) => Promise<{ input: number; output: number }> = () =>
   Promise.reject(new Error("getTokenCountImpl not configured"))
 
-void mock.module("~/lib/tokenizer", () => ({
-  getTokenCount: (payload: ChatCompletionsPayload, model: Model) => {
-    getTokenCountCalls.push({ payload, model })
-    return getTokenCountImpl(payload, model)
-  },
-}))
+function registerModuleMocks() {
+  void mock.module("~/lib/tokenizer", () => ({
+    getTokenCount: (payload: ChatCompletionsPayload, model: Model) => {
+      getTokenCountCalls.push({ payload, model })
+      return getTokenCountImpl(payload, model)
+    },
+  }))
+}
 
 let server: typeof import("~/server").server
 
@@ -53,7 +55,9 @@ const baseModel = (overrides: Partial<Model>): Model => ({
 })
 
 beforeAll(async () => {
+  registerModuleMocks()
   ;({ server } = await import("~/server"))
+  mock.restore()
 })
 
 afterAll(() => {

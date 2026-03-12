@@ -1,11 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
-import {
-  createResponses,
-  type ResponsesPayload,
-} from "~/services/copilot/v2/create-responses"
+
+import type { ResponsesPayload } from "../src/services/copilot/v2/create-responses"
+
+mock.restore()
+
+const { createResponses } = await import(
+  "../src/services/copilot/v2/create-responses"
+)
 
 const originalFetch = globalThis.fetch
 

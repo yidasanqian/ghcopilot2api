@@ -49,45 +49,49 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse | MockSseStream> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
-void mock.module("~/services/copilot/v2/create-messages", () => ({
-  createMessages: (payload: AnthropicMessagesPayload) => {
-    createMessagesCalls.push(payload)
-    return createMessagesImpl(payload)
-  },
-  isAnthropicNonStreaming: (response: unknown) =>
-    typeof response === "object" && response !== null && "content" in response,
-}))
+function registerModuleMocks() {
+  void mock.module("~/services/copilot/v2/create-messages", () => ({
+    createMessages: (payload: AnthropicMessagesPayload) => {
+      createMessagesCalls.push(payload)
+      return createMessagesImpl(payload)
+    },
+    isAnthropicNonStreaming: (response: unknown) =>
+      typeof response === "object"
+      && response !== null
+      && "content" in response,
+  }))
 
-void mock.module("~/services/copilot/create-chat-completions", () => ({
-  createChatCompletions: (payload: ChatCompletionsPayload) => {
-    createChatCompletionsCalls.push(payload)
-    return createChatCompletionsImpl(payload)
-  },
-}))
+  void mock.module("~/services/copilot/create-chat-completions", () => ({
+    createChatCompletions: (payload: ChatCompletionsPayload) => {
+      createChatCompletionsCalls.push(payload)
+      return createChatCompletionsImpl(payload)
+    },
+  }))
 
-void mock.module("~/lib/tokenizer", () => ({
-  getTokenCount: (
-    payload: ChatCompletionsPayload,
-    model: Model,
-  ): Promise<number> => {
-    getTokenCountCalls.push({ payload, model })
-    return Promise.resolve(42)
-  },
-}))
+  void mock.module("~/lib/tokenizer", () => ({
+    getTokenCount: (
+      payload: ChatCompletionsPayload,
+      model: Model,
+    ): Promise<number> => {
+      getTokenCountCalls.push({ payload, model })
+      return Promise.resolve(42)
+    },
+  }))
 
-void mock.module("~/lib/rate-limit", () => ({
-  checkRateLimit: () => {
-    checkRateLimitCalls += 1
-    return Promise.resolve()
-  },
-}))
+  void mock.module("~/lib/rate-limit", () => ({
+    checkRateLimit: () => {
+      checkRateLimitCalls += 1
+      return Promise.resolve()
+    },
+  }))
 
-void mock.module("~/lib/approval", () => ({
-  awaitApproval: () => {
-    awaitApprovalCalls += 1
-    return Promise.resolve()
-  },
-}))
+  void mock.module("~/lib/approval", () => ({
+    awaitApproval: () => {
+      awaitApprovalCalls += 1
+      return Promise.resolve()
+    },
+  }))
+}
 
 let server: typeof import("~/server").server
 
@@ -111,7 +115,9 @@ const baseModel = (overrides: Partial<Model>): Model => ({
 })
 
 beforeAll(async () => {
+  registerModuleMocks()
   ;({ server } = await import("~/server"))
+  mock.restore()
 })
 
 afterAll(() => {

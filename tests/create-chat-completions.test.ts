@@ -1,12 +1,16 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
-import {
-  createChatCompletions,
-  type ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
 import { resolveInitiator } from "~/services/copilot/resolve-initiator"
+
+import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat-completions"
+
+mock.restore()
+
+const { createChatCompletions } = await import(
+  "../src/services/copilot/create-chat-completions"
+)
 
 const originalFetch = globalThis.fetch
 

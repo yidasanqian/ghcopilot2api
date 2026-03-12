@@ -1,3 +1,4 @@
 - Docker 构建使用 oven/bun:1.2.19-alpine；修改 package.json 后需要用同版本 Bun 重建 bun.lock，否则 bun install --frozen-lockfile 会失败。
 - 可用命令：docker run --rm -v "${PWD}:/app" -w /app oven/bun:1.2.19-alpine sh -lc "bun install --ignore-scripts"。
 - GitHub Actions 和本地构建应优先使用 Bun 1.2.19；当前 tsdown 0.15.6 在 Bun 1.3.6 下会报 this[#bundler].createImpl is not a function。
+- Bun 的 mock.module 在整套测试中会跨文件污染；项目测试应使用 bun run test，通过 scripts/test.ts 为每个 tests/*.test.ts 启动独立 Bun 进程。
