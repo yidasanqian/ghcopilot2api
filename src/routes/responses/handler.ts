@@ -29,6 +29,7 @@ import {
 import {
   createResponses,
   isResponsesNonStreaming,
+  normalizeResponsesPayload,
   type ResponsesPayload,
 } from "~/services/copilot/v2/create-responses"
 import { resolveResponsesUpstreamApi } from "~/services/copilot/v2/model-router"
@@ -39,7 +40,9 @@ import type { AnthropicStreamEventData } from "../messages/anthropic-types"
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
-  const payload = await c.req.json<ResponsesPayload>()
+  const payload = normalizeResponsesPayload(
+    await c.req.json<ResponsesPayload>(),
+  )
   consola.debug(
     "Responses request payload:",
     JSON.stringify(payload).slice(-400),

@@ -55,6 +55,14 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse | MockSseStream> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
+const normalizeResponsesInput = (input: ResponsesPayload["input"]) => {
+  if (typeof input === "string") {
+    return [{ type: "message" as const, role: "user" as const, content: input }]
+  }
+
+  return input
+}
+
 void mock.module("~/services/copilot/v2/create-responses", () => ({
   createResponses: (payload: ResponsesPayload) => {
     createResponsesCalls.push(payload)
@@ -62,6 +70,12 @@ void mock.module("~/services/copilot/v2/create-responses", () => ({
   },
   isResponsesNonStreaming: (response: unknown) =>
     typeof response === "object" && response !== null && "output" in response,
+  normalizeResponsesInput,
+  normalizeResponsesPayload: (payload: ResponsesPayload) => ({
+    ...payload,
+    input: normalizeResponsesInput(payload.input),
+    user: payload.user ?? undefined,
+  }),
 }))
 
 void mock.module("~/services/copilot/v2/create-messages", () => ({
@@ -143,6 +157,53 @@ beforeEach(() => {
 })
 
 describe("responses route non-streaming", () => {
+  test("normalizes string input for native responses requests", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        baseModel({
+          id: "gpt-4o",
+          supported_endpoints: ["/chat/completions", "/responses"],
+        }),
+      ],
+    } satisfies ModelsResponse
+
+    const payload: ResponsesPayload = {
+      model: "gpt-4o",
+      input: "Hello from string input",
+    }
+    const upstreamResponse: ResponsesResponse = {
+      id: "resp_string_1",
+      model: "gpt-4o",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Hello from responses" }],
+        },
+      ],
+      status: "completed",
+    }
+    createResponsesImpl = () => Promise.resolve(upstreamResponse)
+
+    const response = await server.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponsesCalls).toEqual([
+      {
+        model: "gpt-4o",
+        input: [{ type: "message", role: "user", content: payload.input }],
+      },
+    ])
+    expect((await response.json()) as ResponsesResponse).toEqual(
+      upstreamResponse,
+    )
+  })
+
   test("passes through native responses for models that support /responses", async () => {
     state.models = {
       object: "list",
@@ -548,6 +609,71 @@ describe("responses route streaming translated messages", () => {
 })
 
 describe("responses route chat completions fallback", () => {
+  test("normalizes string input before falling back to chat completions", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        baseModel({
+          id: "legacy-gpt",
+          supported_endpoints: ["/chat/completions"],
+        }),
+      ],
+    } satisfies ModelsResponse
+
+    const payload: ResponsesPayload = {
+      model: "legacy-gpt",
+      input: "Hello fallback string",
+    }
+    createChatCompletionsImpl = () =>
+      Promise.resolve({
+        id: "chatcmpl_string_1",
+        object: "chat.completion",
+        created: 1,
+        model: "legacy-gpt",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "Hello from chat completions",
+            },
+            logprobs: null,
+            finish_reason: "stop",
+          },
+        ],
+      })
+
+    const response = await server.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponsesCalls).toHaveLength(0)
+    expect(createMessagesCalls).toHaveLength(0)
+    expect(createChatCompletionsCalls).toEqual([
+      {
+        model: "legacy-gpt",
+        messages: [{ role: "user", content: "Hello fallback string" }],
+      },
+    ])
+    expect((await response.json()) as ResponsesResponse).toEqual({
+      id: "chatcmpl_string_1",
+      model: "legacy-gpt",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [
+            { type: "output_text", text: "Hello from chat completions" },
+          ],
+        },
+      ],
+      status: "completed",
+    })
+  })
+
   test("falls back to chat completions when responses and messages are unavailable", async () => {
     state.models = {
       object: "list",

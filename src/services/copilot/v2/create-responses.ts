@@ -7,7 +7,7 @@ import { state } from "~/lib/state"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 
 export interface ResponsesPayload {
-  input: Array<ResponsesInputItem>
+  input: string | Array<ResponsesInputItem>
   model: string
   max_output_tokens?: number | null
   stream?: boolean | null
@@ -151,15 +151,42 @@ export type ResponsesStreamEvent =
       }
     }
 
+export interface NormalizedResponsesPayload
+  extends Omit<ResponsesPayload, "input" | "user"> {
+  input: Array<ResponsesInputItem>
+  user?: string
+}
+
+export function normalizeResponsesInput(
+  input: ResponsesPayload["input"],
+): Array<ResponsesInputItem> {
+  if (typeof input === "string") {
+    return [{ type: "message", role: "user", content: input }]
+  }
+
+  if (Array.isArray(input)) {
+    return input
+  }
+
+  return []
+}
+
+export function normalizeResponsesPayload(
+  payload: ResponsesPayload,
+): NormalizedResponsesPayload {
+  return {
+    ...payload,
+    input: normalizeResponsesInput(payload.input),
+    user: normalizeOpenAICompatibleUser(payload.user),
+  }
+}
+
 export const createResponses = async (payload: ResponsesPayload) => {
   if (!state.copilotToken) {
     throw new Error("Copilot token not found")
   }
 
-  const normalizedPayload: ResponsesPayload = {
-    ...payload,
-    user: normalizeOpenAICompatibleUser(payload.user),
-  }
+  const normalizedPayload = normalizeResponsesPayload(payload)
 
   const headers: Record<string, string> = {
     ...copilotHeaders(state, hasVisionInput(normalizedPayload)),
@@ -203,7 +230,7 @@ export const isResponsesNonStreaming = (
   response: Awaited<ReturnType<typeof createResponses>>,
 ): response is ResponsesResponse => Object.hasOwn(response as object, "output")
 
-function hasAgentInput(payload: ResponsesPayload): boolean {
+function hasAgentInput(payload: NormalizedResponsesPayload): boolean {
   return payload.input.some((item) => {
     if (item.type === "message") {
       return item.role === "assistant"
@@ -213,7 +240,7 @@ function hasAgentInput(payload: ResponsesPayload): boolean {
   })
 }
 
-function hasVisionInput(payload: ResponsesPayload): boolean {
+function hasVisionInput(payload: NormalizedResponsesPayload): boolean {
   return payload.input.some((item) => {
     if (item.type !== "message" || !Array.isArray(item.content)) {
       return false

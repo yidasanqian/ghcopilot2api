@@ -45,6 +45,14 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse | MockSseStream> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
+const normalizeResponsesInput = (input: ResponsesPayload["input"]) => {
+  if (typeof input === "string") {
+    return [{ type: "message" as const, role: "user" as const, content: input }]
+  }
+
+  return input
+}
+
 void mock.module("~/services/copilot/v2/create-responses", () => ({
   createResponses: (payload: ResponsesPayload) => {
     createResponsesCalls.push(payload)
@@ -52,6 +60,12 @@ void mock.module("~/services/copilot/v2/create-responses", () => ({
   },
   isResponsesNonStreaming: (response: unknown) =>
     typeof response === "object" && response !== null && "output" in response,
+  normalizeResponsesInput,
+  normalizeResponsesPayload: (payload: ResponsesPayload) => ({
+    ...payload,
+    input: normalizeResponsesInput(payload.input),
+    user: payload.user ?? undefined,
+  }),
 }))
 
 void mock.module("~/services/copilot/v2/create-messages", () => ({

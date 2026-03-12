@@ -8,18 +8,19 @@ import type {
 
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 
-import type {
-  ResponsesInputContent,
-  ResponsesFunctionCallItem,
-  ResponsesInputItem,
-  ResponsesPayload,
+import {
+  normalizeResponsesInput,
+  type ResponsesInputContent,
+  type ResponsesFunctionCallItem,
+  type ResponsesInputItem,
+  type ResponsesPayload,
 } from "./create-responses"
 
 export function translateResponsesToChat(
   payload: ResponsesPayload,
 ): ChatCompletionsPayload {
   return {
-    messages: translateResponsesInput(payload.input),
+    messages: translateResponsesInput(normalizeResponsesInput(payload.input)),
     model: payload.model,
     max_tokens: payload.max_output_tokens,
     stream: payload.stream,
