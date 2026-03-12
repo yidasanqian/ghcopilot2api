@@ -29,7 +29,7 @@ describe("createMessages", () => {
     const requestIds: Array<string | undefined> = []
     let callCount = 0
 
-    globalThis.fetch = ((_input, init) => {
+    globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
       callCount += 1
       requestIds.push(getHeaderValue(init, "x-request-id"))
 
@@ -66,7 +66,7 @@ describe("createMessages", () => {
           },
         ),
       )
-    }) as typeof fetch
+    }) as unknown as typeof fetch
 
     const response = await createMessages(basePayload)
 
@@ -83,7 +83,7 @@ describe("createMessages", () => {
   test("throws upstream connection error after retryable connection failures are exhausted", async () => {
     let callCount = 0
 
-    globalThis.fetch = (() => {
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) => {
       callCount += 1
       const error = new Error(
         "The socket connection was closed unexpectedly",
@@ -92,7 +92,7 @@ describe("createMessages", () => {
       }
       error.code = "ECONNRESET"
       return Promise.reject(error)
-    }) as typeof fetch
+    }) as unknown as typeof fetch
 
     const error = await getThrownError(() => createMessages(basePayload))
 
@@ -103,10 +103,10 @@ describe("createMessages", () => {
   test("does not retry non-retryable upstream HTTP errors", async () => {
     let callCount = 0
 
-    globalThis.fetch = (() => {
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) => {
       callCount += 1
       return Promise.resolve(new Response("bad request", { status: 400 }))
-    }) as typeof fetch
+    }) as unknown as typeof fetch
 
     const error = await getThrownError(() => createMessages(basePayload))
 
