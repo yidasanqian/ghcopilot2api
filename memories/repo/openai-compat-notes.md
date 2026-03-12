@@ -1,0 +1,1 @@
+- OpenAI-compatible upstream user fields must be <= 64 chars; use normalizeOpenAICompatibleUser in translation and outbound request boundaries.
