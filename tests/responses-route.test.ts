@@ -196,7 +196,9 @@ describe("responses route non-streaming", () => {
     expect(createResponsesCalls).toEqual([
       {
         model: "gpt-4o",
-        input: [{ type: "message", role: "user", content: payload.input }],
+        input: [
+          { type: "message", role: "user", content: "Hello from string input" },
+        ],
       },
     ])
     expect((await response.json()) as ResponsesResponse).toEqual(
