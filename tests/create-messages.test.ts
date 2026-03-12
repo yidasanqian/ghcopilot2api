@@ -1,40 +1,24 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 
+import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
+
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
-import {
-  createChatCompletions,
-  type ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
-import { resolveInitiator } from "~/services/copilot/resolve-initiator"
+import { createMessages } from "~/services/copilot/v2/create-messages"
 
 const originalFetch = globalThis.fetch
 
-const basePayload: ChatCompletionsPayload = {
-  model: "gpt-4o",
+const basePayload: AnthropicMessagesPayload = {
+  model: "claude-haiku-4.5",
+  max_tokens: 64,
   messages: [{ role: "user", content: "Hello" }],
 }
 
-describe("resolveInitiator", () => {
-  test("sets X-Initiator to agent if tool/assistant present", () => {
-    const initiator = resolveInitiator([{ role: "user" }, { role: "tool" }])
-
-    expect(initiator).toBe("agent")
-  })
-
-  test("sets X-Initiator to user if only user present", () => {
-    const initiator = resolveInitiator([{ role: "user" }, { role: "user" }])
-
-    expect(initiator).toBe("user")
-  })
-})
-
-describe("createChatCompletions", () => {
+describe("createMessages", () => {
   beforeEach(() => {
     state.accountType = "individual"
     state.copilotToken = "test-token"
     state.vsCodeVersion = "1.100.0"
-    state.models = undefined
   })
 
   afterEach(() => {
@@ -45,7 +29,7 @@ describe("createChatCompletions", () => {
     const requestIds: Array<string | undefined> = []
     let callCount = 0
 
-    globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    globalThis.fetch = ((_input, init) => {
       callCount += 1
       requestIds.push(getHeaderValue(init, "x-request-id"))
 
@@ -62,21 +46,17 @@ describe("createChatCompletions", () => {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            id: "chatcmpl_1",
-            object: "chat.completion",
-            created: 1,
-            model: "gpt-4o",
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: "assistant",
-                  content: "ok",
-                },
-                logprobs: null,
-                finish_reason: "stop",
-              },
-            ],
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            model: "claude-haiku-4.5",
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+            },
           }),
           {
             status: 200,
@@ -86,24 +66,24 @@ describe("createChatCompletions", () => {
           },
         ),
       )
-    }) as unknown as typeof fetch
+    }) as typeof fetch
 
-    const response = await createChatCompletions(basePayload)
+    const response = await createMessages(basePayload)
 
     expect(callCount).toBe(2)
     expect(requestIds).toHaveLength(2)
     expect(requestIds[0]).toBeDefined()
     expect(requestIds[0]).toBe(requestIds[1])
     expect(response).toMatchObject({
-      id: "chatcmpl_1",
-      model: "gpt-4o",
+      id: "msg_1",
+      model: "claude-haiku-4.5",
     })
   })
 
   test("throws upstream connection error after retryable connection failures are exhausted", async () => {
     let callCount = 0
 
-    globalThis.fetch = ((_input: unknown, _init?: RequestInit) => {
+    globalThis.fetch = (() => {
       callCount += 1
       const error = new Error(
         "The socket connection was closed unexpectedly",
@@ -112,9 +92,9 @@ describe("createChatCompletions", () => {
       }
       error.code = "ECONNRESET"
       return Promise.reject(error)
-    }) as unknown as typeof fetch
+    }) as typeof fetch
 
-    const error = await getThrownError(() => createChatCompletions(basePayload))
+    const error = await getThrownError(() => createMessages(basePayload))
 
     expect(error).toBeInstanceOf(UpstreamConnectionError)
     expect(callCount).toBe(2)
@@ -123,12 +103,12 @@ describe("createChatCompletions", () => {
   test("does not retry non-retryable upstream HTTP errors", async () => {
     let callCount = 0
 
-    globalThis.fetch = ((_input: unknown, _init?: RequestInit) => {
+    globalThis.fetch = (() => {
       callCount += 1
       return Promise.resolve(new Response("bad request", { status: 400 }))
-    }) as unknown as typeof fetch
+    }) as typeof fetch
 
-    const error = await getThrownError(() => createChatCompletions(basePayload))
+    const error = await getThrownError(() => createMessages(basePayload))
 
     expect(error).toBeInstanceOf(HTTPError)
     expect(callCount).toBe(1)

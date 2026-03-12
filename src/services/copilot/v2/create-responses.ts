@@ -4,6 +4,7 @@ import { events } from "fetch-event-stream"
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 
 export interface ResponsesPayload {
@@ -193,10 +194,21 @@ export const createResponses = async (payload: ResponsesPayload) => {
     "X-Initiator": hasAgentInput(normalizedPayload) ? "agent" : "user",
   }
 
-  const response = await fetch(`${copilotBaseUrl(state)}/v1/responses`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(normalizedPayload),
+  const response = await fetchWithUpstreamRetry({
+    exhaustedMessage: "Failed to reach upstream responses API",
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(normalizedPayload),
+    },
+    operationName: "responses",
+    requestId: headers["x-request-id"],
+    requestMetadata: {
+      model: normalizedPayload.model,
+      stream: normalizedPayload.stream ?? false,
+      inputCount: normalizedPayload.input.length,
+    },
+    url: `${copilotBaseUrl(state)}/v1/responses`,
   })
 
   if (!response.ok) {

@@ -22,7 +22,7 @@ import type {
   ResponsesResponse,
 } from "~/services/copilot/v2/create-responses"
 
-import { HTTPError } from "~/lib/error"
+import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 
@@ -53,6 +53,14 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
+const normalizeResponsesInput = (input: ResponsesPayload["input"]) => {
+  if (typeof input === "string") {
+    return [{ type: "message" as const, role: "user" as const, content: input }]
+  }
+
+  return input
+}
+
 void mock.module("~/services/copilot/v2/create-messages", () => ({
   createMessages: (
     payload: AnthropicMessagesPayload,
@@ -74,6 +82,12 @@ void mock.module("~/services/copilot/v2/create-responses", () => ({
   },
   isResponsesNonStreaming: (response: unknown) =>
     typeof response === "object" && response !== null && "output" in response,
+  normalizeResponsesInput,
+  normalizeResponsesPayload: (payload: ResponsesPayload) => ({
+    ...payload,
+    input: normalizeResponsesInput(payload.input),
+    user: payload.user ?? undefined,
+  }),
 }))
 
 void mock.module("~/services/copilot/create-chat-completions", () => ({
@@ -138,6 +152,62 @@ beforeEach(() => {
 })
 
 describe("messages route upstream HTTP errors", () => {
+  test("returns 502 for native messages upstream connection failures", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        baseModel({
+          id: "claude-sonnet-4.5",
+          capabilities: {
+            family: "claude",
+            limits: {},
+            object: "model_capabilities",
+            supports: {},
+            tokenizer: "claude",
+            type: "chat",
+          },
+          supported_endpoints: ["/v1/messages"],
+          vendor: "anthropic",
+        }),
+      ],
+    } satisfies ModelsResponse
+
+    const payload: AnthropicMessagesPayload = {
+      model: "claude-sonnet-4.5",
+      max_tokens: 64,
+      messages: [{ role: "user", content: "Hello native" }],
+    }
+
+    createMessagesImpl = () =>
+      Promise.reject(
+        new UpstreamConnectionError("Failed to reach upstream messages API"),
+      )
+
+    const response = await server.request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({
+      error: {
+        message: "Failed to reach upstream messages API",
+        type: "error",
+      },
+    })
+    expect(createMessagesCalls).toEqual([
+      {
+        payload,
+        options: {
+          extraHeaders: {},
+        },
+      },
+    ])
+    expect(createResponsesCalls).toHaveLength(0)
+    expect(createChatCompletionsCalls).toHaveLength(0)
+  })
+
   test("forwards native messages upstream HTTP errors", async () => {
     state.models = {
       object: "list",

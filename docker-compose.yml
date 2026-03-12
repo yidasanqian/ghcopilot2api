@@ -3,6 +3,7 @@ services:
     build:
       context: .
     container_name: ghcopilot2api
+    #command: ["--verbose"] # Enable verbose logging for debugging
     ports:
       - "127.0.0.1:4141:4141"
     environment:

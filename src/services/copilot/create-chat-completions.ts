@@ -4,6 +4,7 @@ import { events } from "fetch-event-stream"
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 import { resolveInitiator } from "~/services/copilot/resolve-initiator"
 
@@ -34,10 +35,23 @@ export const createChatCompletions = async (
     "X-Initiator": resolveInitiator(normalizedPayload.messages),
   }
 
-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(normalizedPayload),
+  const response = await fetchWithUpstreamRetry({
+    exhaustedMessage: "Failed to reach upstream chat completions API",
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(normalizedPayload),
+    },
+    operationName: "chat completions",
+    requestId: headers["x-request-id"],
+    requestMetadata: {
+      model: normalizedPayload.model,
+      stream: normalizedPayload.stream ?? false,
+      messageCount: normalizedPayload.messages.length,
+      hasTools: (normalizedPayload.tools?.length ?? 0) > 0,
+      toolChoice: normalizedPayload.tool_choice ?? null,
+    },
+    url: `${copilotBaseUrl(state)}/chat/completions`,
   })
 
   if (!response.ok) {

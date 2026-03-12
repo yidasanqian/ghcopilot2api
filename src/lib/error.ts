@@ -21,6 +21,21 @@ export class RequestValidationError extends Error {
   }
 }
 
+export class UpstreamConnectionError extends Error {
+  status: ContentfulStatusCode
+
+  constructor(
+    message: string,
+    options: {
+      cause?: unknown
+      status?: ContentfulStatusCode
+    } = {},
+  ) {
+    super(message, { cause: options.cause })
+    this.status = options.status ?? 502
+  }
+}
+
 export async function forwardError(c: Context, error: unknown) {
   consola.error("Error occurred:", error)
 
@@ -50,6 +65,18 @@ export async function forwardError(c: Context, error: unknown) {
         error: {
           message: error.message,
           type: "invalid_request_error",
+        },
+      },
+      error.status,
+    )
+  }
+
+  if (error instanceof UpstreamConnectionError) {
+    return c.json(
+      {
+        error: {
+          message: error.message,
+          type: "error",
         },
       },
       error.status,

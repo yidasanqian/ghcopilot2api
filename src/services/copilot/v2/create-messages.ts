@@ -10,10 +10,23 @@ import type {
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 
 interface CreateMessagesOptions {
   extraHeaders?: Record<string, string>
 }
+
+type FetchMessagesWithRetry = (options: {
+  exhaustedMessage: string
+  init: RequestInit
+  operationName: string
+  requestId?: string
+  requestMetadata?: Record<string, unknown>
+  url: string
+  maxAttempts?: number
+}) => Promise<Response>
+
+const fetchWithSharedRetry = fetchWithUpstreamRetry as FetchMessagesWithRetry
 
 export const createMessages = async (
   payload: AnthropicMessagesPayload,
@@ -35,11 +48,7 @@ export const createMessages = async (
     payload: getMessagesRequestPreview(payload),
   })
 
-  const response = await fetch(`${copilotBaseUrl(state)}/v1/messages`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  })
+  const response = await fetchMessagesWithRetry(payload, headers)
 
   if (!response.ok) {
     const errorBody = await getResponseBodyForLog(response)
@@ -82,6 +91,28 @@ function hasVisionContent(payload: AnthropicMessagesPayload): boolean {
       Array.isArray(message.content)
       && message.content.some((block) => block.type === "image"),
   )
+}
+
+function fetchMessagesWithRetry(
+  payload: AnthropicMessagesPayload,
+  headers: Record<string, string>,
+): Promise<Response> {
+  return fetchWithSharedRetry({
+    exhaustedMessage: "Failed to reach upstream messages API",
+    init: {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    },
+    operationName: "messages",
+    requestId: headers["x-request-id"],
+    requestMetadata: {
+      model: payload.model,
+      stream: payload.stream ?? false,
+      messageCount: payload.messages.length,
+    },
+    url: `${copilotBaseUrl(state)}/v1/messages`,
+  })
 }
 
 async function getResponseBodyForLog(response: Response): Promise<unknown> {
