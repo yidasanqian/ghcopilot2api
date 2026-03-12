@@ -439,7 +439,7 @@ https://yidasanqian.github.io/ghcopilot2api?endpoint=http://localhost:4141/usage
 bun install
 bun run build
 bun run lint
-bun test
+bun run test
 ```
 
 单测示例：
