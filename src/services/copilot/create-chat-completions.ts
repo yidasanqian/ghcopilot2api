@@ -4,37 +4,40 @@ import { events } from "fetch-event-stream"
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { normalizeOpenAICompatibleUser } from "~/lib/utils"
+import { resolveInitiator } from "~/services/copilot/resolve-initiator"
 
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
 ) => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  const selectedModel = state.models?.data.find((model) => model.id === payload.model)
-  const toolDiagnostics = getToolDiagnostics(payload.tools)
+  const normalizedPayload: ChatCompletionsPayload = {
+    ...payload,
+    user: normalizeOpenAICompatibleUser(payload.user),
+  }
 
-  const enableVision = payload.messages.some(
+  const selectedModel = state.models?.data.find(
+    (model) => model.id === normalizedPayload.model,
+  )
+  const toolDiagnostics = getToolDiagnostics(normalizedPayload.tools)
+
+  const enableVision = normalizedPayload.messages.some(
     (x) =>
       typeof x.content !== "string"
       && x.content?.some((x) => x.type === "image_url"),
   )
 
-  // Agent/user check for X-Initiator header
-  // Determine if any message is from an agent ("assistant" or "tool")
-  const isAgentCall = payload.messages.some((msg) =>
-    ["assistant", "tool"].includes(msg.role),
-  )
-
   // Build headers and add X-Initiator
   const headers: Record<string, string> = {
     ...copilotHeaders(state, enableVision),
-    "X-Initiator": isAgentCall ? "agent" : "user",
+    "X-Initiator": resolveInitiator(normalizedPayload.messages),
   }
 
   const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   })
 
   if (!response.ok) {
@@ -48,13 +51,13 @@ export const createChatCompletions = async (
       responseRequestId:
         response.headers.get("x-request-id")
         ?? response.headers.get("x-github-request-id"),
-      model: payload.model,
+      model: normalizedPayload.model,
       modelSupportsToolCalls: selectedModel?.capabilities.supports.tool_calls,
-      stream: payload.stream ?? false,
-      messageCount: payload.messages.length,
-      messageRoles: payload.messages.map((message) => message.role),
-      hasTools: (payload.tools?.length ?? 0) > 0,
-      toolChoice: payload.tool_choice ?? null,
+      stream: normalizedPayload.stream ?? false,
+      messageCount: normalizedPayload.messages.length,
+      messageRoles: normalizedPayload.messages.map((message) => message.role),
+      hasTools: (normalizedPayload.tools?.length ?? 0) > 0,
+      toolChoice: normalizedPayload.tool_choice ?? null,
       toolDiagnostics,
       body: errorBody,
     })
@@ -62,7 +65,7 @@ export const createChatCompletions = async (
     throw new HTTPError("Failed to create chat completions", response)
   }
 
-  if (payload.stream) {
+  if (normalizedPayload.stream) {
     return events(response)
   }
 
@@ -76,18 +79,15 @@ function getToolDiagnostics(tools: Array<Tool> | null | undefined) {
     }
   }
 
-  const invalidNamePattern = /^[A-Za-z0-9_-]{1,64}$/
-  const invalidNames: string[] = []
-  const nonObjectSchemas: string[] = []
-  const schemaWithoutProperties: string[] = []
+  const invalidNamePattern = /^[\w-]{1,64}$/
+  const invalidNames: Array<string> = []
+  const nonObjectSchemas: Array<string> = []
+  const schemaWithoutProperties: Array<string> = []
 
   for (const tool of tools) {
     const toolName = tool.function.name
     const parameters = tool.function.parameters
-    const schemaType =
-      typeof parameters === "object" && parameters !== null && "type" in parameters ?
-        parameters.type
-        : undefined
+    const schemaType = "type" in parameters ? parameters.type : undefined
 
     if (!invalidNamePattern.test(toolName)) {
       invalidNames.push(toolName)
@@ -97,12 +97,7 @@ function getToolDiagnostics(tools: Array<Tool> | null | undefined) {
       nonObjectSchemas.push(toolName)
     }
 
-    if (
-      schemaType === "object"
-      && typeof parameters === "object"
-      && parameters !== null
-      && !("properties" in parameters)
-    ) {
+    if (schemaType === "object" && !("properties" in parameters)) {
       schemaWithoutProperties.push(toolName)
     }
   }
@@ -233,11 +228,11 @@ export interface ChatCompletionsPayload {
   seed?: number | null
   tools?: Array<Tool> | null
   tool_choice?:
-  | "none"
-  | "auto"
-  | "required"
-  | { type: "function"; function: { name: string } }
-  | null
+    | "none"
+    | "auto"
+    | "required"
+    | { type: "function"; function: { name: string } }
+    | null
   user?: string | null
 }
 

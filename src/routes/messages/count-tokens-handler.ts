@@ -6,7 +6,11 @@ import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
 
 import { type AnthropicMessagesPayload } from "./anthropic-types"
-import { translateToOpenAI } from "./non-stream-translation"
+import {
+  getAnthropicToolName,
+  normalizeAnthropicPayload,
+  translateToOpenAI,
+} from "./non-stream-translation"
 
 /**
  * Handles token counting for Anthropic messages
@@ -15,7 +19,9 @@ export async function handleCountTokens(c: Context) {
   try {
     const anthropicBeta = c.req.header("anthropic-beta")
 
-    const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
+    const anthropicPayload = normalizeAnthropicPayload(
+      await c.req.json<AnthropicMessagesPayload>(),
+    )
 
     const openAIPayload = translateToOpenAI(anthropicPayload)
 
@@ -34,9 +40,9 @@ export async function handleCountTokens(c: Context) {
 
     if (anthropicPayload.tools && anthropicPayload.tools.length > 0) {
       let mcpToolExist = false
-      if (anthropicBeta?.startsWith("claude-code")) {
-        mcpToolExist = anthropicPayload.tools.some((tool) =>
-          tool.name.startsWith("mcp__"),
+      if (hasAnthropicBetaPrefix(anthropicBeta, "claude-code")) {
+        mcpToolExist = anthropicPayload.tools.some(
+          (tool) => getAnthropicToolName(tool)?.startsWith("mcp__") ?? false,
         )
       }
       if (!mcpToolExist) {
@@ -67,4 +73,18 @@ export async function handleCountTokens(c: Context) {
       input_tokens: 1,
     })
   }
+}
+
+function hasAnthropicBetaPrefix(
+  headerValue: string | undefined,
+  requiredPrefix: string,
+): boolean {
+  if (!headerValue) {
+    return false
+  }
+
+  return headerValue
+    .split(",")
+    .map((value) => value.trim())
+    .some((value) => value.startsWith(requiredPrefix))
 }

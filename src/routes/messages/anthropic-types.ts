@@ -13,6 +13,7 @@ export interface AnthropicMessagesPayload {
   temperature?: number
   top_p?: number
   top_k?: number
+  mcp_servers?: Array<AnthropicMcpServer>
   tools?: Array<AnthropicTool>
   tool_choice?: {
     type: "auto" | "any" | "tool" | "none"
@@ -80,16 +81,25 @@ export interface AnthropicAssistantMessage {
 
 export type AnthropicMessage = AnthropicUserMessage | AnthropicAssistantMessage
 
+export interface AnthropicMcpToolConfiguration {
+  enabled?: boolean
+  allowed_tools?: Array<string>
+}
+
+export interface AnthropicMcpServer {
+  name: string
+  type: "url"
+  url: string
+  authorization_token?: string
+  tool_configuration?: AnthropicMcpToolConfiguration
+}
+
 export interface AnthropicTool {
-  type?: string
+  type?: string | null
   name?: string
   description?: string
   input_schema?: Record<string, unknown>
-  custom?: {
-    name?: string
-    description?: string
-    input_schema?: Record<string, unknown>
-  }
+  parameters?: Record<string, unknown>
   server_name?: string
   server_tool_name?: string
   [key: string]: unknown
@@ -102,13 +112,13 @@ export interface AnthropicResponse {
   content: Array<AnthropicAssistantContentBlock>
   model: string
   stop_reason:
-  | "end_turn"
-  | "max_tokens"
-  | "stop_sequence"
-  | "tool_use"
-  | "pause_turn"
-  | "refusal"
-  | null
+    | "end_turn"
+    | "max_tokens"
+    | "stop_sequence"
+    | "tool_use"
+    | "pause_turn"
+    | "refusal"
+    | null
   stop_sequence: string | null
   usage: {
     input_tokens: number
@@ -138,21 +148,21 @@ export interface AnthropicContentBlockStartEvent {
   type: "content_block_start"
   index: number
   content_block:
-  | { type: "text"; text: string }
-  | (Omit<AnthropicToolUseBlock, "input"> & {
-    input: Record<string, unknown>
-  })
-  | { type: "thinking"; thinking: string }
+    | { type: "text"; text: string }
+    | (Omit<AnthropicToolUseBlock, "input"> & {
+        input: Record<string, unknown>
+      })
+    | { type: "thinking"; thinking: string }
 }
 
 export interface AnthropicContentBlockDeltaEvent {
   type: "content_block_delta"
   index: number
   delta:
-  | { type: "text_delta"; text: string }
-  | { type: "input_json_delta"; partial_json: string }
-  | { type: "thinking_delta"; thinking: string }
-  | { type: "signature_delta"; signature: string }
+    | { type: "text_delta"; text: string }
+    | { type: "input_json_delta"; partial_json: string }
+    | { type: "thinking_delta"; thinking: string }
+    | { type: "signature_delta"; signature: string }
 }
 
 export interface AnthropicContentBlockStopEvent {

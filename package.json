@@ -5,7 +5,9 @@
   "keywords": [
     "proxy",
     "github-copilot",
-    "openai-compatible"
+    "openai-compatible",
+    "openai-responses",
+    "anthropic"
   ],
   "homepage": "https://github.com/yidasanqian/ghcopilot2api",
   "bugs": "https://github.com/yidasanqian/ghcopilot2api/issues",
@@ -37,7 +39,7 @@
     "pre-commit": "bunx lint-staged"
   },
   "lint-staged": {
-    "*": "bun run lint --fix"
+    "**/*.ts": "bun run lint --fix"
   },
   "dependencies": {
     "citty": "^0.1.6",
@@ -56,6 +58,7 @@
     "@echristian/eslint-config": "^0.0.54",
     "@types/bun": "^1.2.23",
     "@types/proxy-from-env": "^1.0.4",
+    "baseline-browser-mapping": "^2.10.0",
     "bumpp": "^10.2.3",
     "eslint": "^9.37.0",
     "knip": "^5.64.1",

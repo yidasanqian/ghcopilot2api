@@ -1,3 +1,4 @@
+import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
@@ -40,7 +41,7 @@ export function translateToOpenAI(
     stream: payload.stream,
     temperature: payload.temperature,
     top_p: payload.top_p,
-    user: payload.metadata?.user_id,
+    user: normalizeOpenAICompatibleUser(payload.metadata?.user_id),
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
   }
@@ -54,14 +55,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function getCustomToolDefinition(tool: AnthropicTool): Record<string, unknown> | undefined {
-  return isRecord(tool.custom) ? tool.custom : undefined
+function getOpenAIFunctionToolDefinition(
+  tool: AnthropicTool,
+): Record<string, unknown> | undefined {
+  return isRecord(tool.function) ? tool.function : undefined
 }
+
+function getCustomToolDefinition(
+  tool: AnthropicTool,
+): Record<string, unknown> | undefined {
+  const customTool = tool["custom"]
+  return isRecord(customTool) ? customTool : undefined
+}
+
+const copilotNativeAnthropicToolTypes = new Set([
+  "bash_20250124",
+  "custom",
+  "text_editor_20250124",
+  "text_editor_20250429",
+  "text_editor_20250728",
+  "web_search_20250305",
+])
 
 export function getAnthropicToolName(tool: AnthropicTool): string | undefined {
   const directName = typeof tool.name === "string" ? tool.name.trim() : ""
   if (directName) {
     return directName
+  }
+
+  const openAIFunctionTool = getOpenAIFunctionToolDefinition(tool)
+  const openAIFunctionName =
+    typeof openAIFunctionTool?.name === "string" ?
+      openAIFunctionTool.name.trim()
+    : ""
+  if (openAIFunctionName) {
+    return openAIFunctionName
   }
 
   const customTool = getCustomToolDefinition(tool)
@@ -74,7 +102,9 @@ export function getAnthropicToolName(tool: AnthropicTool): string | undefined {
   const serverName =
     typeof tool.server_name === "string" ? tool.server_name.trim() : ""
   const serverToolName =
-    typeof tool.server_tool_name === "string" ? tool.server_tool_name.trim() : ""
+    typeof tool.server_tool_name === "string" ?
+      tool.server_tool_name.trim()
+    : ""
   if (serverName && serverToolName) {
     return `mcp__${serverName}__${serverToolName}`
   }
@@ -92,6 +122,11 @@ export function getAnthropicToolDescription(
 ): string | undefined {
   if (typeof tool.description === "string") {
     return tool.description
+  }
+
+  const openAIFunctionTool = getOpenAIFunctionToolDefinition(tool)
+  if (typeof openAIFunctionTool?.description === "string") {
+    return openAIFunctionTool.description
   }
 
   const customTool = getCustomToolDefinition(tool)
@@ -132,12 +167,29 @@ function normalizeToolSchema(
   }
 }
 
+function getTopLevelOpenAIToolParameters(
+  tool: AnthropicTool,
+): Record<string, unknown> | undefined {
+  return normalizeToolSchema(tool.parameters)
+}
+
 export function getAnthropicToolInputSchema(
   tool: AnthropicTool,
 ): Record<string, unknown> {
   const directSchema = normalizeToolSchema(tool.input_schema)
   if (directSchema) {
     return directSchema
+  }
+
+  const topLevelOpenAISchema = getTopLevelOpenAIToolParameters(tool)
+  if (topLevelOpenAISchema) {
+    return topLevelOpenAISchema
+  }
+
+  const openAIFunctionTool = getOpenAIFunctionToolDefinition(tool)
+  const openAISchema = normalizeToolSchema(openAIFunctionTool?.parameters)
+  if (openAISchema) {
+    return openAISchema
   }
 
   const customTool = getCustomToolDefinition(tool)
@@ -152,6 +204,80 @@ export function getAnthropicToolInputSchema(
   }
 }
 
+export function normalizeAnthropicPayload(
+  payload: AnthropicMessagesPayload,
+): AnthropicMessagesPayload {
+  const payloadWithCompatFields = payload as AnthropicMessagesPayload & {
+    user?: unknown
+    tool_choice?: unknown
+  }
+
+  const normalizedPayload = {
+    ...payload,
+  }
+
+  if (
+    typeof payloadWithCompatFields.user === "string"
+    && !normalizedPayload.metadata?.user_id
+  ) {
+    normalizedPayload.metadata = {
+      ...normalizedPayload.metadata,
+      user_id: payloadWithCompatFields.user,
+    }
+  }
+
+  if (payload.tools?.length) {
+    normalizedPayload.tools = payload.tools.map((tool) =>
+      normalizeAnthropicTool(tool),
+    )
+  }
+
+  delete (normalizedPayload as { user?: unknown }).user
+
+  return normalizedPayload
+}
+
+function normalizeAnthropicTool(tool: AnthropicTool): AnthropicTool {
+  const directType = typeof tool.type === "string" ? tool.type.trim() : ""
+  const hasOpenAIFunctionDefinition = Boolean(
+    getOpenAIFunctionToolDefinition(tool),
+  )
+  const hasNestedCustomDefinition = Boolean(getCustomToolDefinition(tool))
+  const toolName = getAnthropicToolName(tool)
+  const shouldNormalizeToClientTool =
+    directType === "function"
+    || directType === "custom"
+    || hasNestedCustomDefinition
+    || (!copilotNativeAnthropicToolTypes.has(directType)
+      && hasOpenAIFunctionDefinition)
+
+  if (!shouldNormalizeToClientTool) {
+    return tool
+  }
+
+  const {
+    custom: _nestedCustomTool,
+    function: _openAIFunctionTool,
+    parameters: _openAIParameters,
+    ...restTool
+  } = tool
+
+  const normalizedTool: AnthropicTool = {
+    ...restTool,
+    name: toolName,
+    description: getAnthropicToolDescription(tool),
+    input_schema: getAnthropicToolInputSchema(tool),
+  }
+
+  if (directType === "custom") {
+    normalizedTool.type = "custom"
+  } else {
+    delete normalizedTool.type
+  }
+
+  return normalizedTool
+}
+
 function translateAnthropicMessagesToOpenAI(
   anthropicMessages: Array<AnthropicMessage>,
   system: string | Array<AnthropicTextBlock> | undefined,
@@ -161,7 +287,7 @@ function translateAnthropicMessagesToOpenAI(
   const otherMessages = anthropicMessages.flatMap((message) =>
     message.role === "user" ?
       handleUserMessage(message)
-      : handleAssistantMessage(message),
+    : handleAssistantMessage(message),
   )
 
   return [...systemMessages, ...otherMessages]
@@ -250,26 +376,26 @@ function handleAssistantMessage(
   ].join("\n\n")
 
   return toolUseBlocks.length > 0 ?
-    [
-      {
-        role: "assistant",
-        content: allTextContent || null,
-        tool_calls: toolUseBlocks.map((toolUse) => ({
-          id: toolUse.id,
-          type: "function",
-          function: {
-            name: toolUse.name,
-            arguments: JSON.stringify(toolUse.input),
-          },
-        })),
-      },
-    ]
+      [
+        {
+          role: "assistant",
+          content: allTextContent || null,
+          tool_calls: toolUseBlocks.map((toolUse) => ({
+            id: toolUse.id,
+            type: "function",
+            function: {
+              name: toolUse.name,
+              arguments: JSON.stringify(toolUse.input),
+            },
+          })),
+        },
+      ]
     : [
-      {
-        role: "assistant",
-        content: mapContent(message.content),
-      },
-    ]
+        {
+          role: "assistant",
+          content: mapContent(message.content),
+        },
+      ]
 }
 
 function mapContent(

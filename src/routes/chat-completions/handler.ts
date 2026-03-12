@@ -13,6 +13,19 @@ import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
+import {
+  createStreamState,
+  translateAnthropicEventToChatChunks,
+  translateAnthropicToChatResponse,
+} from "~/services/copilot/v2/anthropic-to-chat"
+import { translateChatToAnthropic } from "~/services/copilot/v2/chat-to-anthropic"
+import {
+  createMessages,
+  isAnthropicNonStreaming,
+} from "~/services/copilot/v2/create-messages"
+import { resolveChatCompletionsUpstreamApi } from "~/services/copilot/v2/model-router"
+
+import type { AnthropicStreamEventData } from "../messages/anthropic-types"
 
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
@@ -47,6 +60,10 @@ export async function handleCompletion(c: Context) {
     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
   }
 
+  if (resolveChatCompletionsUpstreamApi(payload.model) === "messages") {
+    return handleMessagesTranslated(c, payload)
+  }
+
   const response = await createChatCompletions(payload)
 
   if (isNonStreaming(response)) {
@@ -60,6 +77,39 @@ export async function handleCompletion(c: Context) {
       consola.debug("Streaming chunk:", JSON.stringify(chunk))
       await stream.writeSSE(chunk as SSEMessage)
     }
+  })
+}
+
+async function handleMessagesTranslated(
+  c: Context,
+  payload: ChatCompletionsPayload,
+) {
+  const anthropicPayload = translateChatToAnthropic(payload)
+  const response = await createMessages(anthropicPayload)
+
+  if (isAnthropicNonStreaming(response)) {
+    return c.json(translateAnthropicToChatResponse(response))
+  }
+
+  return streamSSE(c, async (stream) => {
+    const streamState = createStreamState()
+
+    for await (const rawEvent of response) {
+      if (!rawEvent.data || rawEvent.data === "[DONE]") {
+        continue
+      }
+
+      const event = JSON.parse(rawEvent.data) as AnthropicStreamEventData
+      const chunks = translateAnthropicEventToChatChunks(event, streamState)
+
+      for (const chunk of chunks) {
+        await stream.writeSSE({
+          data: JSON.stringify(chunk),
+        })
+      }
+    }
+
+    await stream.writeSSE({ data: "[DONE]" })
   })
 }
 

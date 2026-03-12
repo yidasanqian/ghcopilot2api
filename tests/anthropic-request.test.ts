@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
 
+import { normalizeOpenAICompatibleUser } from "~/lib/utils"
+
 import { translateToOpenAI } from "../src/routes/messages/non-stream-translation"
 
 // Zod schema for a single message in the chat completion request.
@@ -100,6 +102,24 @@ describe("Anthropic to OpenAI translation logic", () => {
       tool_choice: { type: "auto" },
     }
     const openAIPayload = translateToOpenAI(anthropicPayload)
+    expect(isValidChatCompletionRequest(openAIPayload)).toBe(true)
+  })
+
+  test("should normalize overlong metadata.user_id for OpenAI-compatible payloads", () => {
+    const longUserId = `user_${"x".repeat(100)}`
+    const anthropicPayload: AnthropicMessagesPayload = {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "Hello!" }],
+      max_tokens: 32,
+      metadata: {
+        user_id: ` ${longUserId} `,
+      },
+    }
+
+    const openAIPayload = translateToOpenAI(anthropicPayload)
+
+    expect(openAIPayload.user).toBe(normalizeOpenAICompatibleUser(longUserId))
+    expect(openAIPayload.user).toHaveLength(64)
     expect(isValidChatCompletionRequest(openAIPayload)).toBe(true)
   })
 
