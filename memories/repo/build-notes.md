@@ -1,0 +1,2 @@
+- Docker 构建使用 oven/bun:1.2.19-alpine；修改 package.json 后需要用同版本 Bun 重建 bun.lock，否则 bun install --frozen-lockfile 会失败。
+- 可用命令：docker run --rm -v "${PWD}:/app" -w /app oven/bun:1.2.19-alpine sh -lc "bun install --ignore-scripts"。
