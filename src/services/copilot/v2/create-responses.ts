@@ -4,6 +4,10 @@ import { events } from "fetch-event-stream"
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import {
+  getResponseBodyForLog,
+  getResponseHeadersForLog,
+} from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 
@@ -225,6 +229,7 @@ export const createResponses = async (payload: ResponsesPayload) => {
       model: normalizedPayload.model,
       stream: normalizedPayload.stream ?? false,
       inputCount: normalizedPayload.input.length,
+      responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })
 
@@ -260,25 +265,4 @@ function hasVisionInput(payload: NormalizedResponsesPayload): boolean {
 
     return item.content.some((content) => content.type === "input_image")
   })
-}
-
-async function getResponseBodyForLog(response: Response): Promise<unknown> {
-  try {
-    const responseText = await response.clone().text()
-
-    if (!responseText) {
-      return null
-    }
-
-    try {
-      return JSON.parse(responseText) as unknown
-    } catch {
-      return responseText
-    }
-  } catch (error) {
-    return {
-      failedToReadBody: true,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
 }

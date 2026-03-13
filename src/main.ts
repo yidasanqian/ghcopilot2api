@@ -2,6 +2,7 @@
 
 import { defineCommand, runMain } from "citty"
 
+import "./lib/logging"
 import { auth } from "./auth"
 import { checkUsage } from "./check-usage"
 import { debug } from "./debug"

@@ -10,6 +10,10 @@ import type {
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import {
+  getResponseBodyForLog,
+  getResponseHeadersForLog,
+} from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 
 interface CreateMessagesOptions {
@@ -64,6 +68,7 @@ export const createMessages = async (
       model: payload.model,
       stream: payload.stream ?? false,
       messageCount: payload.messages.length,
+      responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })
 
@@ -113,27 +118,6 @@ function fetchMessagesWithRetry(
     },
     url: `${copilotBaseUrl(state)}/v1/messages`,
   })
-}
-
-async function getResponseBodyForLog(response: Response): Promise<unknown> {
-  try {
-    const responseText = await response.clone().text()
-
-    if (!responseText) {
-      return null
-    }
-
-    try {
-      return JSON.parse(responseText) as unknown
-    } catch {
-      return responseText
-    }
-  } catch (error) {
-    return {
-      failedToReadBody: true,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
 }
 
 function getUpstreamMessagesLogHeaders(

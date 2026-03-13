@@ -6,6 +6,7 @@ import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
+import { DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS } from "./lib/logging"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
@@ -25,6 +26,7 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  idleTimeout: number
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -65,6 +67,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   )
 
   const serverUrl = `http://localhost:${options.port}`
+
+  consola.info(`HTTP idle timeout: ${options.idleTimeout}s`)
 
   if (options.claudeCode) {
     invariant(state.models, "Models should be loaded by now")
@@ -117,6 +121,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   serve({
     fetch: server.fetch as ServerHandler,
     port: options.port,
+    bun: {
+      idleTimeout: options.idleTimeout,
+    },
   })
 }
 
@@ -184,12 +191,18 @@ export const start = defineCommand({
       default: false,
       description: "Initialize proxy from environment variables",
     },
+    "idle-timeout": {
+      type: "string",
+      default: String(DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS),
+      description: "Bun HTTP idle timeout in seconds",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
     const rateLimit =
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       rateLimitRaw === undefined ? undefined : Number.parseInt(rateLimitRaw, 10)
+    const idleTimeout = Number.parseInt(args["idle-timeout"], 10)
 
     return runServer({
       port: Number.parseInt(args.port, 10),
@@ -202,6 +215,7 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      idleTimeout,
     })
   },
 })

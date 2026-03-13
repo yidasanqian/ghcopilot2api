@@ -3,6 +3,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 import consola from "consola"
 
+import { getResponseLogDetails } from "~/lib/upstream-log"
+
 export class HTTPError extends Error {
   response: Response
 
@@ -40,6 +42,7 @@ export async function forwardError(c: Context, error: unknown) {
   consola.error("Error occurred:", error)
 
   if (error instanceof HTTPError) {
+    const responseLogDetails = await getResponseLogDetails(error.response)
     const errorText = await error.response.text()
     let errorJson: unknown
     try {
@@ -47,7 +50,10 @@ export async function forwardError(c: Context, error: unknown) {
     } catch {
       errorJson = errorText
     }
-    consola.error("HTTP error:", errorJson)
+    consola.error("HTTP error:", {
+      ...responseLogDetails,
+      body: errorJson,
+    })
     return c.json(
       {
         error: {

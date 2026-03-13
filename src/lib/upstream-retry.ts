@@ -1,6 +1,11 @@
 import consola from "consola"
 
 import { UpstreamConnectionError } from "~/lib/error"
+import {
+  getResponseBodyForLog,
+  getResponseHeadersForLog,
+  getUpstreamErrorLog,
+} from "~/lib/upstream-log"
 
 const DEFAULT_MAX_ATTEMPTS = 2
 const RETRYABLE_UPSTREAM_STATUS_CODES = new Set([502, 503, 504])
@@ -58,6 +63,7 @@ export async function fetchWithUpstreamRetry(
             response.headers.get("x-request-id")
             ?? response.headers.get("x-github-request-id"),
           ...options.requestMetadata,
+          responseHeaders: getResponseHeadersForLog(response),
           body: errorBody,
         },
       )
@@ -79,7 +85,7 @@ export async function fetchWithUpstreamRetry(
           maxAttempts,
           requestId: options.requestId,
           ...options.requestMetadata,
-          error: getRetryableErrorLog(error),
+          error: await getUpstreamErrorLog(error),
         },
       )
     }
@@ -92,7 +98,7 @@ export async function fetchWithUpstreamRetry(
     {
       requestId: options.requestId,
       ...options.requestMetadata,
-      error: getRetryableErrorLog(lastRetryableError),
+      error: await getUpstreamErrorLog(lastRetryableError),
     },
   )
 
@@ -124,41 +130,6 @@ function shouldRetryUpstreamError(error: unknown): boolean {
 function getErrorCode(error: Error): string | undefined {
   const code = (error as Error & { code?: unknown }).code
   return typeof code === "string" ? code : undefined
-}
-
-function getRetryableErrorLog(error: unknown) {
-  if (!(error instanceof Error)) {
-    return {
-      value: String(error),
-    }
-  }
-
-  return {
-    name: error.name,
-    message: error.message,
-    code: getErrorCode(error),
-  }
-}
-
-async function getResponseBodyForLog(response: Response): Promise<unknown> {
-  try {
-    const responseText = await response.clone().text()
-
-    if (!responseText) {
-      return null
-    }
-
-    try {
-      return JSON.parse(responseText) as unknown
-    } catch {
-      return responseText
-    }
-  } catch (error) {
-    return {
-      failedToReadBody: true,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
 }
 
 function getRetryDelayMs(attempt: number): number {

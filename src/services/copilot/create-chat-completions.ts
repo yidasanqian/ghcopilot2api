@@ -4,6 +4,10 @@ import { events } from "fetch-event-stream"
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import {
+  getResponseBodyForLog,
+  getResponseHeadersForLog,
+} from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 import { normalizeOpenAICompatibleUser } from "~/lib/utils"
 import { resolveInitiator } from "~/services/copilot/resolve-initiator"
@@ -73,6 +77,7 @@ export const createChatCompletions = async (
       hasTools: (normalizedPayload.tools?.length ?? 0) > 0,
       toolChoice: normalizedPayload.tool_choice ?? null,
       toolDiagnostics,
+      responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })
 
@@ -122,27 +127,6 @@ function getToolDiagnostics(tools: Array<Tool> | null | undefined) {
     invalidNames,
     nonObjectSchemas,
     schemaWithoutProperties,
-  }
-}
-
-async function getResponseBodyForLog(response: Response): Promise<unknown> {
-  try {
-    const responseText = await response.clone().text()
-
-    if (!responseText) {
-      return null
-    }
-
-    try {
-      return JSON.parse(responseText) as unknown
-    } catch {
-      return responseText
-    }
-  } catch (error) {
-    return {
-      failedToReadBody: true,
-      error: error instanceof Error ? error.message : String(error),
-    }
   }
 }
 
