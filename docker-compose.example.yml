@@ -1,7 +1,6 @@
 services:
   copilot-api:
-    build:
-      context: .
+    image: ghcr.io/yidasanqian/ghcopilot2api:latest
     container_name: ghcopilot2api
     #command: ["--verbose"] # Enable verbose logging for debugging
     ports:
