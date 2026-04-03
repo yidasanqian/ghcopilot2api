@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test"
 import {
   DEFAULT_SERVER_IDLE_TIMEOUT_SECONDS,
   LOG_TIME_ZONE,
+  formatRequestDuration,
+  getRequestUrlForLog,
   prependLogTimestamp,
 } from "~/lib/logging"
 
@@ -16,6 +18,17 @@ describe("logging helpers", () => {
     expect(message).toBe(
       "[2026-03-13T20:34:56.789+08:00] <-- POST /v1/messages?beta=true",
     )
+  })
+
+  test("keeps full request url in logs", () => {
+    expect(
+      getRequestUrlForLog("http://localhost:4141/v1/messages?beta=true"),
+    ).toBe("http://localhost:4141/v1/messages?beta=true")
+  })
+
+  test("formats request duration for logs", () => {
+    expect(formatRequestDuration(128)).toBe("128ms")
+    expect(formatRequestDuration(6100)).toBe("6s")
   })
 
   test("sets runtime timezone to Asia/Shanghai", () => {

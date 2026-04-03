@@ -1,6 +1,8 @@
 import { Hono } from "hono"
 
+import { copilotBaseUrl } from "~/lib/api-config"
 import { forwardError } from "~/lib/error"
+import { setUpstreamRequestLogUrl } from "~/lib/logging"
 import { state } from "~/lib/state"
 import { cacheModels } from "~/lib/utils"
 
@@ -8,6 +10,8 @@ export const modelRoutes = new Hono()
 
 modelRoutes.get("/", async (c) => {
   try {
+    setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/models`)
+
     if (!state.models) {
       // This should be handled by startup logic, but as a fallback.
       await cacheModels()

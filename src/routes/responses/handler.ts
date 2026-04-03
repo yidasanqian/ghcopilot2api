@@ -3,7 +3,9 @@ import type { Context } from "hono"
 import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
+import { copilotBaseUrl } from "~/lib/api-config"
 import { awaitApproval } from "~/lib/approval"
+import { setUpstreamRequestLogUrl } from "~/lib/logging"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import {
@@ -69,6 +71,7 @@ export async function handleCompletion(c: Context) {
 }
 
 async function handleNativeResponses(c: Context, payload: ResponsesPayload) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/v1/responses`)
   const response = await createResponses(payload)
 
   if (isResponsesNonStreaming(response)) {
@@ -90,6 +93,7 @@ async function handleNativeResponses(c: Context, payload: ResponsesPayload) {
 }
 
 async function handleMessagesTranslated(c: Context, payload: ResponsesPayload) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/v1/messages`)
   const anthropicPayload = translateChatToAnthropic(
     translateResponsesToChat(payload),
   )
@@ -139,6 +143,7 @@ async function handleChatCompletionsTranslated(
   c: Context,
   payload: ResponsesPayload,
 ) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/chat/completions`)
   const chatPayload = translateResponsesToChat(payload)
   const response = await createChatCompletions(chatPayload)
 

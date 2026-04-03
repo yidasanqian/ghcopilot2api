@@ -7,11 +7,12 @@ export const standardHeaders = () => ({
   accept: "application/json",
 })
 
-const COPILOT_VERSION = "0.26.7"
+const COPILOT_VERSION = "0.42.3"
+const API_VERSION = "2025-05-01"
+const GITHUB_API_VERSION = "2025-04-01"
+
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`
 const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`
-
-const API_VERSION = "2025-04-01"
 
 export const copilotBaseUrl = (state: State) =>
   state.accountType === "individual" ?
@@ -43,7 +44,7 @@ export const githubHeaders = (state: State) => ({
   "editor-version": `vscode/${state.vsCodeVersion}`,
   "editor-plugin-version": EDITOR_PLUGIN_VERSION,
   "user-agent": USER_AGENT,
-  "x-github-api-version": API_VERSION,
+  "x-github-api-version": GITHUB_API_VERSION,
   "x-vscode-user-agent-library-version": "electron-fetch",
 })
 

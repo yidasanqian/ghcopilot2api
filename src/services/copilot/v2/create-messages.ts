@@ -20,12 +20,15 @@ interface CreateMessagesOptions {
   extraHeaders?: Record<string, string>
 }
 
+const STREAM_CONNECTION_RETRY_WINDOW_MS = 1000
+
 type FetchMessagesWithRetry = (options: {
   exhaustedMessage: string
   init: RequestInit
   operationName: string
   requestId?: string
   requestMetadata?: Record<string, unknown>
+  retryConnectionErrorWindowMs?: number
   url: string
   maxAttempts?: number
 }) => Promise<Response>
@@ -116,6 +119,8 @@ function fetchMessagesWithRetry(
       stream: payload.stream ?? false,
       messageCount: payload.messages.length,
     },
+    retryConnectionErrorWindowMs:
+      payload.stream ? STREAM_CONNECTION_RETRY_WINDOW_MS : undefined,
     url: `${copilotBaseUrl(state)}/v1/messages`,
   })
 }
@@ -128,6 +133,7 @@ function getUpstreamMessagesLogHeaders(
   for (const name of [
     "anthropic-beta",
     "anthropic-version",
+    "x-interaction-id",
     "x-request-id",
     "x-initiator",
   ]) {

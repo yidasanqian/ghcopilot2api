@@ -12,6 +12,7 @@ const { createMessages } = await import(
 )
 
 const originalFetch = globalThis.fetch
+const originalDateNow = Date.now
 
 const basePayload: AnthropicMessagesPayload = {
   model: "claude-haiku-4.5",
@@ -28,6 +29,7 @@ describe("createMessages", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    Date.now = originalDateNow
   })
 
   test("retries once on retryable upstream connection resets", async () => {
@@ -116,6 +118,33 @@ describe("createMessages", () => {
     const error = await getThrownError(() => createMessages(basePayload))
 
     expect(error).toBeInstanceOf(HTTPError)
+    expect(callCount).toBe(1)
+  })
+
+  test("does not retry streaming connection resets after the retry window", async () => {
+    let callCount = 0
+    const timestamps = [0, 1501]
+    Date.now = () => timestamps.shift() ?? 1501
+
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) => {
+      callCount += 1
+      const error = new Error(
+        "The socket connection was closed unexpectedly",
+      ) as Error & {
+        code?: string
+      }
+      error.code = "ECONNRESET"
+      return Promise.reject(error)
+    }) as unknown as typeof fetch
+
+    const error = await getThrownError(() =>
+      createMessages({
+        ...basePayload,
+        stream: true,
+      }),
+    )
+
+    expect(error).toBeInstanceOf(UpstreamConnectionError)
     expect(callCount).toBe(1)
   })
 })

@@ -3,8 +3,10 @@ import type { Context } from "hono"
 import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
+import { copilotBaseUrl } from "~/lib/api-config"
 import { awaitApproval } from "~/lib/approval"
 import { RequestValidationError } from "~/lib/error"
+import { setUpstreamRequestLogUrl } from "~/lib/logging"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import {
@@ -30,6 +32,7 @@ import {
 } from "~/services/copilot/v2/responses-to-anthropic"
 
 import {
+  type AnthropicStreamEventData,
   type AnthropicTool,
   type AnthropicMessagesPayload,
   type AnthropicStreamState,
@@ -78,6 +81,7 @@ async function handleNativeMessages(
   c: Context,
   payload: AnthropicMessagesPayload,
 ) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/v1/messages`)
   const response = await createMessages(payload, {
     extraHeaders: getAnthropicProxyHeaders(c, payload),
   })
@@ -99,7 +103,7 @@ async function handleNativeMessages(
 
       await stream.writeSSE({
         event: rawEvent.event ?? "message",
-        data: rawEvent.data,
+        data: normalizeNativeAnthropicStreamEvent(rawEvent.data),
       })
     }
   })
@@ -109,6 +113,7 @@ async function handleResponsesTranslated(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
 ) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/v1/responses`)
   const responsesPayload = translateAnthropicToResponses(anthropicPayload)
   consola.debug(
     "Translated Responses request payload:",
@@ -156,6 +161,7 @@ async function handleChatCompletionsTranslated(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
 ) {
+  setUpstreamRequestLogUrl(c, `${copilotBaseUrl(state)}/chat/completions`)
   const openAIPayload = translateToOpenAI(anthropicPayload)
   consola.debug(
     "Translated OpenAI request payload:",
@@ -317,4 +323,26 @@ function getToolCustomKeys(tool: AnthropicTool): Array<string> {
   }
 
   return Object.keys(customTool).slice(0, 10)
+}
+
+function normalizeNativeAnthropicStreamEvent(rawData: string): string {
+  const parsed = safeParseAnthropicStreamEvent(rawData)
+
+  if (parsed?.type !== "message_stop") {
+    return rawData
+  }
+
+  return JSON.stringify({
+    type: "message_stop",
+  } satisfies AnthropicStreamEventData)
+}
+
+function safeParseAnthropicStreamEvent(
+  rawData: string,
+): AnthropicStreamEventData | undefined {
+  try {
+    return JSON.parse(rawData) as AnthropicStreamEventData
+  } catch {
+    return undefined
+  }
 }

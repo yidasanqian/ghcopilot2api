@@ -8,6 +8,8 @@ import {
 } from "~/lib/upstream-log"
 
 const DEFAULT_MAX_ATTEMPTS = 2
+const RETRY_BASE_DELAY_MS = 200
+const RETRY_MAX_DELAY_MS = 5000
 const RETRYABLE_UPSTREAM_STATUS_CODES = new Set([502, 503, 504])
 const RETRYABLE_UPSTREAM_ERROR_CODES = new Set([
   "ECONNRESET",
@@ -28,6 +30,7 @@ interface FetchWithUpstreamRetryOptions {
   operationName: string
   requestId?: string
   requestMetadata?: Record<string, unknown>
+  retryConnectionErrorWindowMs?: number
   url: string
   maxAttempts?: number
 }
@@ -39,14 +42,29 @@ export async function fetchWithUpstreamRetry(
   let lastRetryableError: unknown
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptStartAt = Date.now()
+
     try {
       const response = await fetch(options.url, options.init)
+      const responseTimeMs = Date.now() - attemptStartAt
 
       if (
         response.ok
         || !shouldRetryUpstreamResponse(response)
         || attempt === maxAttempts
       ) {
+        consola.info(`Upstream ${options.operationName} request completed`, {
+          attempt,
+          maxAttempts,
+          status: response.status,
+          statusText: response.statusText,
+          responseTimeMs,
+          requestId: options.requestId,
+          responseRequestId:
+            response.headers.get("x-request-id")
+            ?? response.headers.get("x-github-request-id"),
+          ...options.requestMetadata,
+        })
         return response
       }
 
@@ -58,6 +76,7 @@ export async function fetchWithUpstreamRetry(
           maxAttempts,
           status: response.status,
           statusText: response.statusText,
+          responseTimeMs,
           requestId: options.requestId,
           responseRequestId:
             response.headers.get("x-request-id")
@@ -68,11 +87,20 @@ export async function fetchWithUpstreamRetry(
         },
       )
     } catch (error) {
+      const responseTimeMs = Date.now() - attemptStartAt
+
       if (!shouldRetryUpstreamError(error)) {
         throw error
       }
 
       lastRetryableError = error
+
+      if (
+        options.retryConnectionErrorWindowMs !== undefined
+        && responseTimeMs > options.retryConnectionErrorWindowMs
+      ) {
+        break
+      }
 
       if (attempt === maxAttempts) {
         break
@@ -83,6 +111,7 @@ export async function fetchWithUpstreamRetry(
         {
           attempt,
           maxAttempts,
+          responseTimeMs,
           requestId: options.requestId,
           ...options.requestMetadata,
           error: await getUpstreamErrorLog(error),
@@ -133,7 +162,7 @@ function getErrorCode(error: Error): string | undefined {
 }
 
 function getRetryDelayMs(attempt: number): number {
-  return 200 * attempt
+  return Math.min(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), RETRY_MAX_DELAY_MS)
 }
 
 function sleep(ms: number): Promise<void> {

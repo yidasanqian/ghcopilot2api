@@ -53,6 +53,8 @@ let createChatCompletionsImpl: (
 ) => Promise<ChatCompletionResponse> = () =>
   Promise.reject(new Error("createChatCompletionsImpl not configured"))
 
+const originalConsoleLog = console.log
+
 const normalizeResponsesInput = (input: ResponsesPayload["input"]) => {
   if (typeof input === "string") {
     return [{ type: "message" as const, role: "user" as const, content: input }]
@@ -163,6 +165,7 @@ beforeEach(() => {
   state.manualApprove = false
   state.anthropicUseMessagesApi = true
   state.models = undefined
+  console.log = originalConsoleLog
 })
 
 describe("messages route validation errors", () => {
@@ -679,5 +682,136 @@ describe("messages route proxy beta headers", () => {
         },
       },
     })
+  })
+})
+
+describe("messages route streaming normalization", () => {
+  test("strips provider-specific fields from native message_stop events", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        baseModel({
+          id: "claude-sonnet-4.6",
+          capabilities: {
+            family: "claude",
+            limits: {},
+            object: "model_capabilities",
+            supports: {},
+            tokenizer: "claude",
+            type: "chat",
+          },
+          supported_endpoints: ["/v1/messages"],
+          vendor: "anthropic",
+        }),
+      ],
+    } satisfies ModelsResponse
+
+    createMessagesImpl = () =>
+      Promise.resolve({
+        async *[Symbol.asyncIterator]() {
+          await Promise.resolve()
+          yield {
+            event: "message_stop",
+            data: JSON.stringify({
+              type: "message_stop",
+              "amazon-bedrock-invocationMetrics": {
+                firstByteLatency: 1094,
+                inputTokenCount: 10,
+                invocationLatency: 1411,
+                outputTokenCount: 31,
+              },
+            }),
+          }
+        },
+      } as never)
+
+    const response = await server.request("/v1/messages?beta=true", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4.6",
+        max_tokens: 64,
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+
+    const body = await response.text()
+    expect(body).toContain("event: message_stop")
+    expect(body).toContain('data: {"type":"message_stop"}')
+    expect(body).not.toContain("amazon-bedrock-invocationMetrics")
+  })
+})
+
+describe("messages route upstream url logging", () => {
+  test("logs the real upstream url on response", async () => {
+    const loggedLines: Array<string> = []
+    console.log = ((...args: Array<unknown>) => {
+      if (typeof args[0] === "string") {
+        loggedLines.push(args[0])
+      }
+    }) as typeof console.log
+
+    state.accountType = "individual"
+    state.models = {
+      object: "list",
+      data: [
+        baseModel({
+          id: "claude-sonnet-4.6",
+          capabilities: {
+            family: "claude",
+            limits: {},
+            object: "model_capabilities",
+            supports: {},
+            tokenizer: "claude",
+            type: "chat",
+          },
+          supported_endpoints: ["/v1/messages"],
+          vendor: "anthropic",
+        }),
+      ],
+    } satisfies ModelsResponse
+
+    createMessagesImpl = () =>
+      Promise.resolve({
+        id: "msg_log_1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4.6",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+        },
+      })
+
+    const response = await server.request("/v1/messages?beta=true", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4.6",
+        max_tokens: 64,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(
+      loggedLines.some((line) =>
+        line.includes("--> POST https://api.githubcopilot.com/v1/messages"),
+      ),
+    ).toBe(true)
+    expect(
+      loggedLines.some((line) =>
+        line.includes("<-- POST https://api.githubcopilot.com/v1/messages 200"),
+      ),
+    ).toBe(true)
   })
 })
