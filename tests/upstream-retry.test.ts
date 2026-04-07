@@ -21,7 +21,10 @@ describe("fetchWithUpstreamRetry", () => {
 
   test("uses exponential backoff delays for retries", async () => {
     const delays: Array<number> = []
-    globalThis.setTimeout = ((handler: TimerHandler, timeout?: number) => {
+    globalThis.setTimeout = ((
+      handler: Parameters<typeof setTimeout>[0],
+      timeout?: number,
+    ) => {
       delays.push(timeout ?? 0)
 
       if (typeof handler === "function") {
