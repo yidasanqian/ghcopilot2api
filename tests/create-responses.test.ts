@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import consola from "consola"
 
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
@@ -12,6 +13,7 @@ const { createResponses } = await import(
 )
 
 const originalFetch = globalThis.fetch
+const originalConsolaError = consola.error
 
 const basePayload: ResponsesPayload = {
   model: "gpt-4o",
@@ -27,6 +29,7 @@ describe("createResponses", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    consola.error = originalConsolaError
   })
 
   test("retries once on retryable upstream connection resets", async () => {
@@ -115,6 +118,60 @@ describe("createResponses", () => {
 
     expect(error).toBeInstanceOf(HTTPError)
     expect(callCount).toBe(1)
+  })
+
+  test("logs request and response headers when upstream returns an HTTP error", async () => {
+    const errorLogs: Array<{
+      message: unknown
+      payload: unknown
+    }> = []
+    consola.error = ((message: unknown, payload: unknown) => {
+      errorLogs.push({ message, payload })
+    }) as typeof consola.error
+
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "responses bad request",
+              type: "invalid_request_error",
+            },
+          }),
+          {
+            status: 400,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": "resp_123",
+            },
+          },
+        ),
+      )) as unknown as typeof fetch
+
+    const error = await getThrownError(() => createResponses(basePayload))
+
+    expect(error).toBeInstanceOf(HTTPError)
+    expect(errorLogs).toHaveLength(1)
+    expect(errorLogs[0]).toMatchObject({
+      message: "Failed to create responses",
+      payload: {
+        requestHeaders: {
+          Authorization: "Bearer [REDACTED]",
+          "X-Initiator": "user",
+          "content-type": "application/json",
+        },
+        responseHeaders: {
+          "content-type": "application/json",
+          "x-request-id": "resp_123",
+        },
+      },
+    })
+    const requestHeaders = (
+      errorLogs[0]?.payload as {
+        requestHeaders: Record<string, string>
+      }
+    ).requestHeaders
+    expect(typeof requestHeaders["x-request-id"]).toBe("string")
   })
 })
 

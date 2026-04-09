@@ -21,6 +21,36 @@ export async function getResponseBodyForLog(
   }
 }
 
+type LoggableHeaders =
+  | Headers
+  | Array<[string, string]>
+  | Record<string, string>
+
+export function getRequestHeadersForLog(
+  headers: LoggableHeaders | undefined,
+): Record<string, string> {
+  if (!headers) {
+    return {}
+  }
+
+  let entries: Iterable<[string, string]>
+
+  if (headers instanceof Headers) {
+    entries = headers.entries()
+  } else if (Array.isArray(headers)) {
+    entries = headers
+  } else {
+    entries = Object.entries(headers)
+  }
+
+  return Object.fromEntries(
+    Array.from(entries, ([name, value]) => [
+      name,
+      isSensitiveHeader(name) ? redactHeaderValue(name, value) : value,
+    ]),
+  )
+}
+
 export function getResponseHeadersForLog(
   response: Response,
 ): Record<string, string> {
@@ -91,4 +121,19 @@ function getResponseFromUnknown(
 
 function isObjectLike(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
+}
+
+function isSensitiveHeader(name: string): boolean {
+  return ["authorization", "proxy-authorization"].includes(name.toLowerCase())
+}
+
+function redactHeaderValue(name: string, value: string): string {
+  const normalizedName = name.toLowerCase()
+
+  if (normalizedName === "authorization") {
+    const [scheme] = value.split(/\s+/, 1)
+    return scheme ? `${scheme} [REDACTED]` : "[REDACTED]"
+  }
+
+  return "[REDACTED]"
 }

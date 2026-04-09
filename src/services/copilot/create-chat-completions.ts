@@ -6,6 +6,7 @@ import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 import {
   getResponseBodyForLog,
+  getRequestHeadersForLog,
   getResponseHeadersForLog,
 } from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
@@ -77,6 +78,7 @@ export const createChatCompletions = async (
       hasTools: (normalizedPayload.tools?.length ?? 0) > 0,
       toolChoice: normalizedPayload.tool_choice ?? null,
       toolDiagnostics,
+      requestHeaders: getRequestHeadersForLog(headers),
       responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })

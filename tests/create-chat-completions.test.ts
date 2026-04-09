@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import consola from "consola"
 
 import { HTTPError, UpstreamConnectionError } from "~/lib/error"
 import { state } from "~/lib/state"
@@ -13,6 +14,7 @@ const { createChatCompletions } = await import(
 )
 
 const originalFetch = globalThis.fetch
+const originalConsolaError = consola.error
 
 const basePayload: ChatCompletionsPayload = {
   model: "gpt-4o",
@@ -43,6 +45,7 @@ describe("createChatCompletions", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    consola.error = originalConsolaError
   })
 
   test("retries once on retryable upstream connection resets", async () => {
@@ -136,6 +139,60 @@ describe("createChatCompletions", () => {
 
     expect(error).toBeInstanceOf(HTTPError)
     expect(callCount).toBe(1)
+  })
+
+  test("logs request and response headers when upstream returns an HTTP error", async () => {
+    const errorLogs: Array<{
+      message: unknown
+      payload: unknown
+    }> = []
+    consola.error = ((message: unknown, payload: unknown) => {
+      errorLogs.push({ message, payload })
+    }) as typeof consola.error
+
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "chat completions bad request",
+              type: "invalid_request_error",
+            },
+          }),
+          {
+            status: 400,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": "chat_123",
+            },
+          },
+        ),
+      )) as unknown as typeof fetch
+
+    const error = await getThrownError(() => createChatCompletions(basePayload))
+
+    expect(error).toBeInstanceOf(HTTPError)
+    expect(errorLogs).toHaveLength(1)
+    expect(errorLogs[0]).toMatchObject({
+      message: "Failed to create chat completions",
+      payload: {
+        requestHeaders: {
+          Authorization: "Bearer [REDACTED]",
+          "X-Initiator": "user",
+          "content-type": "application/json",
+        },
+        responseHeaders: {
+          "content-type": "application/json",
+          "x-request-id": "chat_123",
+        },
+      },
+    })
+    const requestHeaders = (
+      errorLogs[0]?.payload as {
+        requestHeaders: Record<string, string>
+      }
+    ).requestHeaders
+    expect(typeof requestHeaders["x-request-id"]).toBe("string")
   })
 })
 

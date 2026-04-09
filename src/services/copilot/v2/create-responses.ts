@@ -6,6 +6,7 @@ import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 import {
   getResponseBodyForLog,
+  getRequestHeadersForLog,
   getResponseHeadersForLog,
 } from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
@@ -229,6 +230,7 @@ export const createResponses = async (payload: ResponsesPayload) => {
       model: normalizedPayload.model,
       stream: normalizedPayload.stream ?? false,
       inputCount: normalizedPayload.input.length,
+      requestHeaders: getRequestHeadersForLog(headers),
       responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })

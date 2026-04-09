@@ -14,6 +14,7 @@ const { createMessages } = await import(
 
 const originalFetch = globalThis.fetch
 const originalDateNow = Date.now
+const originalConsolaDebug = consola.debug
 const originalConsolaError = consola.error
 
 const basePayload: AnthropicMessagesPayload = {
@@ -22,17 +23,13 @@ const basePayload: AnthropicMessagesPayload = {
   messages: [{ role: "user", content: "Hello" }],
 }
 
-describe("createMessages", () => {
+describe("createMessages retry behavior", () => {
   beforeEach(() => {
-    state.accountType = "individual"
-    state.copilotToken = "test-token"
-    state.vsCodeVersion = "1.100.0"
+    resetState()
   })
 
   afterEach(() => {
-    globalThis.fetch = originalFetch
-    Date.now = originalDateNow
-    consola.error = originalConsolaError
+    restoreGlobals()
   })
 
   test("retries once on retryable upstream connection resets", async () => {
@@ -123,6 +120,16 @@ describe("createMessages", () => {
     expect(error).toBeInstanceOf(HTTPError)
     expect(callCount).toBe(1)
   })
+})
+
+describe("createMessages payload handling", () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  afterEach(() => {
+    restoreGlobals()
+  })
 
   test("logs the full messages payload when upstream returns an HTTP error", async () => {
     const errorLogs: Array<{
@@ -180,15 +187,150 @@ describe("createMessages", () => {
       message: "Failed to create messages",
       payload: {
         messageCount: 2,
+        removedKeys: ["context_management"],
+        requestHeaders: {
+          Authorization: "Bearer [REDACTED]",
+          "X-Initiator": "agent",
+          "content-type": "application/json",
+        },
+        responseHeaders: {
+          "content-type": "application/json",
+          "x-request-id": "req_123",
+        },
       },
     })
+    const requestHeaders = (
+      errorLogs[0]?.payload as {
+        requestHeaders: Record<string, string>
+      }
+    ).requestHeaders
+    expect(typeof requestHeaders["x-request-id"]).toBe("string")
     expect(errorLogs[1]).toEqual({
       message: "Failed to create messages request payload",
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify({
+        ...payload,
+        context_management: undefined,
+      }),
     })
     expect(errorLogs[0]?.payload).toMatchObject({
       messageCount: 2,
     })
+  })
+
+  test("removes unsupported context_management before sending native messages upstream", async () => {
+    let sentBody: string | undefined
+
+    const payload = {
+      ...basePayload,
+      context_management: {
+        foo: "bar",
+      },
+    } as AnthropicMessagesPayload & {
+      context_management: {
+        foo: string
+      }
+    }
+
+    globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+      sentBody = typeof init?.body === "string" ? init.body : undefined
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            model: "claude-haiku-4.5",
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )
+    }) as unknown as typeof fetch
+
+    await createMessages(payload)
+
+    expect(sentBody).toBeDefined()
+    expect(JSON.parse(sentBody as string)).not.toHaveProperty(
+      "context_management",
+    )
+  })
+
+  test("logs removed keys before sending native messages upstream", async () => {
+    const debugLogs: Array<{
+      message: unknown
+      payload: unknown
+    }> = []
+    consola.debug = ((message: unknown, payload: unknown) => {
+      debugLogs.push({ message, payload })
+    }) as typeof consola.debug
+
+    const payload = {
+      ...basePayload,
+      context_management: {
+        foo: "bar",
+      },
+    } as AnthropicMessagesPayload & {
+      context_management: {
+        foo: string
+      }
+    }
+
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            model: "claude-haiku-4.5",
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )) as unknown as typeof fetch
+
+    await createMessages(payload)
+
+    expect(debugLogs).toHaveLength(1)
+    expect(debugLogs[0]).toMatchObject({
+      message: "Native messages upstream request:",
+      payload: {
+        removedKeys: ["context_management"],
+      },
+    })
+  })
+})
+
+describe("createMessages streaming retry window", () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  afterEach(() => {
+    restoreGlobals()
   })
 
   test("does not retry streaming connection resets after the retry window", async () => {
@@ -218,6 +360,19 @@ describe("createMessages", () => {
     expect(callCount).toBe(1)
   })
 })
+
+function resetState() {
+  state.accountType = "individual"
+  state.copilotToken = "test-token"
+  state.vsCodeVersion = "1.100.0"
+}
+
+function restoreGlobals() {
+  globalThis.fetch = originalFetch
+  Date.now = originalDateNow
+  consola.debug = originalConsolaDebug
+  consola.error = originalConsolaError
+}
 
 async function getThrownError<T>(action: () => Promise<T>): Promise<unknown> {
   try {

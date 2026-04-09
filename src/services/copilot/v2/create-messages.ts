@@ -12,12 +12,18 @@ import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 import {
   getResponseBodyForLog,
+  getRequestHeadersForLog,
   getResponseHeadersForLog,
 } from "~/lib/upstream-log"
 import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
 
 interface CreateMessagesOptions {
   extraHeaders?: Record<string, string>
+}
+
+interface SanitizedMessagesPayload {
+  payload: AnthropicMessagesPayload
+  removedKeys: Array<string>
 }
 
 const STREAM_CONNECTION_RETRY_WINDOW_MS = 1000
@@ -43,6 +49,9 @@ export const createMessages = async (
     throw new Error("Copilot token not found")
   }
 
+  const { payload: upstreamPayload, removedKeys } =
+    stripUnsupportedMessagesFields(payload)
+
   const headers: Record<string, string> = {
     ...copilotHeaders(state, hasVisionContent(payload)),
     "X-Initiator": hasAgentHistory(payload) ? "agent" : "user",
@@ -52,14 +61,15 @@ export const createMessages = async (
   consola.debug("Native messages upstream request:", {
     url: `${copilotBaseUrl(state)}/v1/messages`,
     headers: getUpstreamMessagesLogHeaders(headers),
-    payload: getMessagesRequestPreview(payload),
+    removedKeys,
+    payload: getMessagesRequestPreview(upstreamPayload),
   })
 
-  const response = await fetchMessagesWithRetry(payload, headers)
+  const response = await fetchMessagesWithRetry(upstreamPayload, headers)
 
   if (!response.ok) {
     const errorBody = await getResponseBodyForLog(response)
-    const requestPayloadJson = JSON.stringify(payload)
+    const requestPayloadJson = JSON.stringify(upstreamPayload)
 
     consola.error("Failed to create messages", {
       status: response.status,
@@ -72,6 +82,8 @@ export const createMessages = async (
       model: payload.model,
       stream: payload.stream ?? false,
       messageCount: payload.messages.length,
+      removedKeys,
+      requestHeaders: getRequestHeadersForLog(headers),
       responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })
@@ -128,6 +140,20 @@ function fetchMessagesWithRetry(
       payload.stream ? STREAM_CONNECTION_RETRY_WINDOW_MS : undefined,
     url: `${copilotBaseUrl(state)}/v1/messages`,
   })
+}
+
+function stripUnsupportedMessagesFields(
+  payload: AnthropicMessagesPayload,
+): SanitizedMessagesPayload {
+  const { context_management: _contextManagement, ...sanitizedPayload } =
+    payload as AnthropicMessagesPayload & {
+      context_management?: unknown
+    }
+
+  return {
+    payload: sanitizedPayload,
+    removedKeys: _contextManagement === undefined ? [] : ["context_management"],
+  }
 }
 
 function getUpstreamMessagesLogHeaders(
