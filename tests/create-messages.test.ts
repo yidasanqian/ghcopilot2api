@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import consola from "consola"
 
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
 
@@ -13,6 +14,7 @@ const { createMessages } = await import(
 
 const originalFetch = globalThis.fetch
 const originalDateNow = Date.now
+const originalConsolaError = consola.error
 
 const basePayload: AnthropicMessagesPayload = {
   model: "claude-haiku-4.5",
@@ -30,6 +32,7 @@ describe("createMessages", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
     Date.now = originalDateNow
+    consola.error = originalConsolaError
   })
 
   test("retries once on retryable upstream connection resets", async () => {
@@ -119,6 +122,73 @@ describe("createMessages", () => {
 
     expect(error).toBeInstanceOf(HTTPError)
     expect(callCount).toBe(1)
+  })
+
+  test("logs the full messages payload when upstream returns an HTTP error", async () => {
+    const errorLogs: Array<{
+      message: unknown
+      payload: unknown
+    }> = []
+    consola.error = ((message: unknown, payload: unknown) => {
+      errorLogs.push({ message, payload })
+    }) as typeof consola.error
+
+    const payload = {
+      ...basePayload,
+      stream: true,
+      metadata: {
+        user_id: "user_123",
+      },
+      context_management: {
+        foo: "bar",
+      },
+      messages: [
+        { role: "user" as const, content: "Hello" },
+        { role: "assistant" as const, content: "Need tool context" },
+      ],
+    } as AnthropicMessagesPayload & {
+      context_management: {
+        foo: string
+      }
+    }
+
+    globalThis.fetch = ((_input: unknown, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "context_management: Extra inputs are not permitted",
+              type: "invalid_request_error",
+            },
+            type: "error",
+          }),
+          {
+            status: 400,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": "req_123",
+            },
+          },
+        ),
+      )) as unknown as typeof fetch
+
+    const error = await getThrownError(() => createMessages(payload))
+
+    expect(error).toBeInstanceOf(HTTPError)
+    expect(errorLogs).toHaveLength(2)
+    expect(errorLogs[0]).toMatchObject({
+      message: "Failed to create messages",
+      payload: {
+        messageCount: 2,
+      },
+    })
+    expect(errorLogs[1]).toEqual({
+      message: "Failed to create messages request payload",
+      payload: JSON.stringify(payload),
+    })
+    expect(errorLogs[0]?.payload).toMatchObject({
+      messageCount: 2,
+    })
   })
 
   test("does not retry streaming connection resets after the retry window", async () => {

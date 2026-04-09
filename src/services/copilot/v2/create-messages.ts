@@ -59,6 +59,7 @@ export const createMessages = async (
 
   if (!response.ok) {
     const errorBody = await getResponseBodyForLog(response)
+    const requestPayloadJson = JSON.stringify(payload)
 
     consola.error("Failed to create messages", {
       status: response.status,
@@ -74,6 +75,10 @@ export const createMessages = async (
       responseHeaders: getResponseHeadersForLog(response),
       body: errorBody,
     })
+    consola.error(
+      "Failed to create messages request payload",
+      requestPayloadJson,
+    )
 
     throw new HTTPError("Failed to create messages", response)
   }
