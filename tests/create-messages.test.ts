@@ -324,6 +324,148 @@ describe("createMessages payload handling", () => {
   })
 })
 
+describe("createMessages cache_control sanitization", () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  afterEach(() => {
+    restoreGlobals()
+  })
+
+  test("removes scope from any nested cache_control before sending native messages upstream", async () => {
+    let sentBody: string | undefined
+
+    const payload = {
+      ...basePayload,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Hello with cached block",
+              cache_control: {
+                scope: "global",
+                type: "ephemeral",
+              },
+            },
+          ],
+        },
+      ],
+      system: [
+        {
+          type: "text",
+          text: "x-anthropic-billing-header: cc_version=2.1.89.27b;",
+        },
+        {
+          type: "text",
+          text: "You are Claude Code, Anthropic's official CLI for Claude.",
+        },
+        {
+          type: "text",
+          text: "cached system block",
+          cache_control: {
+            scope: "global",
+            type: "ephemeral",
+          },
+        },
+      ],
+    } as AnthropicMessagesPayload & {
+      messages: Array<{
+        role: "user"
+        content: Array<{
+          type: "text"
+          text: string
+          cache_control?: {
+            scope?: string
+            type: string
+          }
+        }>
+      }>
+      system: Array<{
+        type: "text"
+        text: string
+        cache_control?: {
+          scope?: string
+          type: string
+        }
+      }>
+    }
+
+    globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+      sentBody = typeof init?.body === "string" ? init.body : undefined
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            model: "claude-haiku-4.5",
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )
+    }) as unknown as typeof fetch
+
+    await createMessages(payload)
+
+    expect(sentBody).toBeDefined()
+    expect(JSON.parse(sentBody as string)).toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Hello with cached block",
+              cache_control: {
+                type: "ephemeral",
+              },
+            },
+          ],
+        },
+      ],
+      system: [
+        {
+          type: "text",
+          text: "x-anthropic-billing-header: cc_version=2.1.89.27b;",
+        },
+        {
+          type: "text",
+          text: "You are Claude Code, Anthropic's official CLI for Claude.",
+        },
+        {
+          type: "text",
+          text: "cached system block",
+          cache_control: {
+            type: "ephemeral",
+          },
+        },
+      ],
+    })
+    expect(JSON.parse(sentBody as string)).not.toHaveProperty(
+      "messages.0.content.0.cache_control.scope",
+    )
+    expect(JSON.parse(sentBody as string)).not.toHaveProperty(
+      "system.2.cache_control.scope",
+    )
+  })
+})
+
 describe("createMessages streaming retry window", () => {
   beforeEach(() => {
     resetState()

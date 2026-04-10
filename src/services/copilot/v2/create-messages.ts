@@ -145,15 +145,114 @@ function fetchMessagesWithRetry(
 function stripUnsupportedMessagesFields(
   payload: AnthropicMessagesPayload,
 ): SanitizedMessagesPayload {
+  const removedKeys: Array<string> = []
   const { context_management: _contextManagement, ...sanitizedPayload } =
     payload as AnthropicMessagesPayload & {
       context_management?: unknown
     }
 
-  return {
-    payload: sanitizedPayload,
-    removedKeys: _contextManagement === undefined ? [] : ["context_management"],
+  if (_contextManagement !== undefined) {
+    removedKeys.push("context_management")
   }
+
+  return {
+    payload: sanitizeCacheControlScope(
+      sanitizedPayload,
+      "",
+      removedKeys,
+    ) as AnthropicMessagesPayload,
+    removedKeys,
+  }
+}
+
+function sanitizeCacheControlScope(
+  value: unknown,
+  path: string,
+  removedKeys: Array<string>,
+): unknown {
+  if (Array.isArray(value)) {
+    let changed = false
+    const sanitizedItems: Array<unknown> = []
+
+    for (const [index, item] of value.entries()) {
+      const sanitizedItem = sanitizeCacheControlScope(
+        item,
+        joinPath(path, String(index)),
+        removedKeys,
+      )
+
+      if (sanitizedItem !== item) {
+        changed = true
+      }
+
+      sanitizedItems.push(sanitizedItem)
+    }
+
+    return changed ? sanitizedItems : value
+  }
+
+  if (!isRecord(value)) {
+    return value
+  }
+
+  let changed = false
+  const sanitizedObject: Record<string, unknown> = {}
+
+  for (const [key, currentValue] of Object.entries(value)) {
+    const currentPath = joinPath(path, key)
+
+    if (key === "cache_control" && isRecord(currentValue)) {
+      const sanitizedCacheControl = sanitizeCacheControlObject(
+        currentValue,
+        currentPath,
+        removedKeys,
+      )
+
+      sanitizedObject[key] = sanitizedCacheControl
+      if (sanitizedCacheControl !== currentValue) {
+        changed = true
+      }
+      continue
+    }
+
+    const sanitizedValue = sanitizeCacheControlScope(
+      currentValue,
+      currentPath,
+      removedKeys,
+    )
+    sanitizedObject[key] = sanitizedValue
+
+    if (sanitizedValue !== currentValue) {
+      changed = true
+    }
+  }
+
+  return changed ? sanitizedObject : value
+}
+
+function sanitizeCacheControlObject(
+  cacheControl: Record<string, unknown>,
+  path: string,
+  removedKeys: Array<string>,
+): Record<string, unknown> | undefined {
+  if (!Object.hasOwn(cacheControl, "scope")) {
+    return cacheControl
+  }
+
+  const { scope: _scope, ...sanitizedCacheControl } = cacheControl
+  removedKeys.push(`${path}.scope`)
+
+  return Object.keys(sanitizedCacheControl).length === 0 ?
+      undefined
+    : sanitizedCacheControl
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function joinPath(basePath: string, segment: string): string {
+  return basePath ? `${basePath}.${segment}` : segment
 }
 
 function getUpstreamMessagesLogHeaders(
