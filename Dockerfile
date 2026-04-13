@@ -14,6 +14,7 @@ COPY ./package.json ./bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
 
 COPY --from=builder /app/dist ./dist
+COPY ./scripts/log-tee.ts ./scripts/log-tee.ts
 
 EXPOSE 4141
 

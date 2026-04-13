@@ -11,6 +11,8 @@ services:
     environment:
       GH_TOKEN: ${GH_TOKEN:-}
       LOG_FILE: /var/log/copilot-api/copilot-api.log
+      LOG_FILE_MAX_SIZE: ${LOG_FILE_MAX_SIZE:-100m}
+      LOG_FILE_MAX_FILES: ${LOG_FILE_MAX_FILES:-5}
     volumes:
       - ./copilot-data:/root/.local/share/copilot-api
       - ./logs:/var/log/copilot-api

@@ -238,6 +238,8 @@ docker run -p 127.0.0.1:4141:4141 \
 docker run -p 127.0.0.1:4141:4141 \
   -e GH_TOKEN=your_github_token \
   -e LOG_FILE=/var/log/copilot-api/copilot-api.log \
+  -e LOG_FILE_MAX_SIZE=100m \
+  -e LOG_FILE_MAX_FILES=5 \
   -v ${PWD}/copilot-data:/root/.local/share/copilot-api \
   -v ${PWD}/logs:/var/log/copilot-api \
   ghcopilot2api
@@ -295,6 +297,8 @@ Copy-Item .env.example .env
 ```dotenv
 GH_TOKEN=
 LOG_FILE=/var/log/copilot-api/copilot-api.log
+LOG_FILE_MAX_SIZE=100m
+LOG_FILE_MAX_FILES=5
 HTTP_PROXY=
 HTTPS_PROXY=
 ALL_PROXY=
@@ -305,6 +309,8 @@ NO_PROXY=localhost,127.0.0.1,::1
 
 - `GH_TOKEN`：可选，直接注入 GitHub token；如果使用一次性认证容器并持久化 `copilot-data`，可以留空。
 - `LOG_FILE`：容器内日志落盘路径，需配合 `./logs` 挂载目录。
+- `LOG_FILE_MAX_SIZE`：单个日志文件最大大小，支持纯字节数或 `k`/`m`/`g` 后缀，默认 `100m`；设置为 `0` 可关闭自动轮转。
+- `LOG_FILE_MAX_FILES`：日志轮转时最多保留的历史文件数量，默认 `5`。
 - `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`：出站代理配置，按需填写。
 
 推荐配置如下：
@@ -320,6 +326,8 @@ services:
     environment:
       GH_TOKEN: ${GH_TOKEN:-}
       LOG_FILE: /var/log/copilot-api/copilot-api.log
+      LOG_FILE_MAX_SIZE: ${LOG_FILE_MAX_SIZE:-100m}
+      LOG_FILE_MAX_FILES: ${LOG_FILE_MAX_FILES:-5}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       ALL_PROXY: ${ALL_PROXY:-}
@@ -329,6 +337,8 @@ services:
       - ./logs:/var/log/copilot-api
     restart: unless-stopped
 ```
+
+启用后会在 `./logs` 下保留当前文件 `copilot-api.log`，并滚动生成 `copilot-api.log.1`、`copilot-api.log.2` 这类历史文件，便于直接在宿主机查看。
 
 ### 两种部署鉴权方式
 
