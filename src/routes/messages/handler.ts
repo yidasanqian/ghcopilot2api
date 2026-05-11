@@ -46,6 +46,7 @@ import {
   translateToOpenAI,
 } from "./non-stream-translation"
 import { translateChunkToAnthropicEvents } from "./stream-translation"
+import { isStreamDoneSentinel } from "./utils"
 
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
@@ -97,6 +98,10 @@ async function handleNativeMessages(
   consola.debug("Streaming Anthropic response (passthrough)")
   return streamSSE(c, async (stream) => {
     for await (const rawEvent of response) {
+      if (isStreamDoneSentinel(rawEvent.data)) {
+        break
+      }
+
       if (!rawEvent.data) {
         continue
       }

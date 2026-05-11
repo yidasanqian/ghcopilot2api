@@ -14,3 +14,7 @@ export function mapOpenAIStopReasonToAnthropic(
   } as const
   return stopReasonMap[finishReason]
 }
+
+export function isStreamDoneSentinel(data: string | undefined): boolean {
+  return data === "[DONE]"
+}
