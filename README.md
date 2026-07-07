@@ -299,6 +299,7 @@ GH_TOKEN=
 LOG_FILE=/var/log/copilot-api/copilot-api.log
 LOG_FILE_MAX_SIZE=100m
 LOG_FILE_MAX_FILES=5
+MODEL_REQUEST_TIMEOUT_SECONDS=300
 HTTP_PROXY=
 HTTPS_PROXY=
 ALL_PROXY=
@@ -308,6 +309,7 @@ NO_PROXY=localhost,127.0.0.1,::1
 变量说明：
 
 - `GH_TOKEN`：可选，直接注入 GitHub token；如果使用一次性认证容器并持久化 `copilot-data`，可以留空。
+- `MODEL_REQUEST_TIMEOUT_SECONDS`：请求 Copilot 模型接口的超时时间，默认 `300` 秒。
 - `LOG_FILE`：容器内日志落盘路径，需配合 `./logs` 挂载目录。
 - `LOG_FILE_MAX_SIZE`：单个日志文件最大大小，支持纯字节数或 `k`/`m`/`g` 后缀，默认 `100m`；设置为 `0` 可关闭自动轮转。
 - `LOG_FILE_MAX_FILES`：日志轮转时最多保留的历史文件数量，默认 `5`。

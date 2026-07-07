@@ -8,6 +8,8 @@ import {
 } from "~/lib/upstream-log"
 
 const DEFAULT_MAX_ATTEMPTS = 2
+export const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECONDS = 300
+const UPSTREAM_REQUEST_TIMEOUT_ENV = "MODEL_REQUEST_TIMEOUT_SECONDS"
 const RETRY_BASE_DELAY_MS = 200
 const RETRY_MAX_DELAY_MS = 5000
 const RETRYABLE_UPSTREAM_STATUS_CODES = new Set([502, 503, 504])
@@ -45,7 +47,10 @@ export async function fetchWithUpstreamRetry(
     const attemptStartAt = Date.now()
 
     try {
-      const response = await fetch(options.url, options.init)
+      const response = await fetch(options.url, {
+        ...options.init,
+        signal: getUpstreamRequestSignal(options.init.signal),
+      })
       const responseTimeMs = Date.now() - attemptStartAt
 
       if (
@@ -163,6 +168,26 @@ function getErrorCode(error: Error): string | undefined {
 
 function getRetryDelayMs(attempt: number): number {
   return Math.min(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), RETRY_MAX_DELAY_MS)
+}
+
+function getUpstreamRequestSignal(signal: AbortSignal | null | undefined) {
+  const timeoutSignal = AbortSignal.timeout(getUpstreamRequestTimeoutMs())
+
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+}
+
+function getUpstreamRequestTimeoutMs(): number {
+  const rawSeconds = process.env[UPSTREAM_REQUEST_TIMEOUT_ENV]
+  const seconds =
+    rawSeconds === undefined || rawSeconds.trim() === "" ?
+      DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECONDS
+    : Number(rawSeconds)
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECONDS * 1000
+  }
+
+  return seconds * 1000
 }
 
 function sleep(ms: number): Promise<void> {

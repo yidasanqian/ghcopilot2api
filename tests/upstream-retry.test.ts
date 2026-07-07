@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import consola from "consola"
 
-import { fetchWithUpstreamRetry } from "~/lib/upstream-retry"
+import {
+  DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECONDS,
+  fetchWithUpstreamRetry,
+} from "~/lib/upstream-retry"
 
 const originalFetch = globalThis.fetch
 const originalSetTimeout = globalThis.setTimeout
 const originalWarn = consola.warn
 const originalInfo = consola.info
 const originalDateNow = Date.now
+const originalAbortSignalTimeout = AbortSignal.timeout.bind(AbortSignal)
+const originalTimeoutEnv = process.env.MODEL_REQUEST_TIMEOUT_SECONDS
 
 describe("fetchWithUpstreamRetry", () => {
   afterEach(() => {
@@ -16,7 +21,58 @@ describe("fetchWithUpstreamRetry", () => {
     consola.warn = originalWarn
     consola.info = originalInfo
     Date.now = originalDateNow
+    AbortSignal.timeout = originalAbortSignalTimeout
+    if (originalTimeoutEnv === undefined) {
+      delete process.env.MODEL_REQUEST_TIMEOUT_SECONDS
+    } else {
+      process.env.MODEL_REQUEST_TIMEOUT_SECONDS = originalTimeoutEnv
+    }
     mock.restore()
+  })
+
+  test("uses a 300s default upstream request timeout", async () => {
+    const timeoutMs: Array<number> = []
+    AbortSignal.timeout = ((milliseconds: number) => {
+      timeoutMs.push(milliseconds)
+      return new AbortController().signal
+    }) as typeof AbortSignal.timeout
+
+    globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      return Promise.resolve(new Response("{}", { status: 200 }))
+    }) as unknown as typeof fetch
+
+    await fetchWithUpstreamRetry({
+      exhaustedMessage: "Failed to reach upstream",
+      init: { method: "POST" },
+      operationName: "messages",
+      url: "https://example.com/v1/messages",
+    })
+
+    expect(DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECONDS).toBe(300)
+    expect(timeoutMs).toEqual([300_000])
+  })
+
+  test("allows env to override upstream request timeout", async () => {
+    process.env.MODEL_REQUEST_TIMEOUT_SECONDS = "12"
+    const timeoutMs: Array<number> = []
+    AbortSignal.timeout = ((milliseconds: number) => {
+      timeoutMs.push(milliseconds)
+      return new AbortController().signal
+    }) as typeof AbortSignal.timeout
+
+    globalThis.fetch = (() => {
+      return Promise.resolve(new Response("{}", { status: 200 }))
+    }) as unknown as typeof fetch
+
+    await fetchWithUpstreamRetry({
+      exhaustedMessage: "Failed to reach upstream",
+      init: { method: "POST" },
+      operationName: "messages",
+      url: "https://example.com/v1/messages",
+    })
+
+    expect(timeoutMs).toEqual([12_000])
   })
 
   test("uses exponential backoff delays for retries", async () => {
